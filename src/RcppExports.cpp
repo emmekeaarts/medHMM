@@ -49,10 +49,30 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// mult_ed_fb_cpp
+List mult_ed_fb_cpp(int m, int n, NumericVector delta, NumericMatrix allprobs, int Mx, IntegerVector Mx2, NumericMatrix gamma, NumericMatrix d, IntegerVector S, IntegerVector S2);
+RcppExport SEXP _medHMM_mult_ed_fb_cpp(SEXP mSEXP, SEXP nSEXP, SEXP deltaSEXP, SEXP allprobsSEXP, SEXP MxSEXP, SEXP Mx2SEXP, SEXP gammaSEXP, SEXP dSEXP, SEXP SSEXP, SEXP S2SEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::traits::input_parameter< int >::type m(mSEXP);
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type delta(deltaSEXP);
+    Rcpp::traits::input_parameter< NumericMatrix >::type allprobs(allprobsSEXP);
+    Rcpp::traits::input_parameter< int >::type Mx(MxSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type Mx2(Mx2SEXP);
+    Rcpp::traits::input_parameter< NumericMatrix >::type gamma(gammaSEXP);
+    Rcpp::traits::input_parameter< NumericMatrix >::type d(dSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type S(SSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type S2(S2SEXP);
+    rcpp_result_gen = Rcpp::wrap(mult_ed_fb_cpp(m, n, delta, allprobs, Mx, Mx2, gamma, d, S, S2));
+    return rcpp_result_gen;
+END_RCPP
+}
 
 static const R_CallMethodDef CallEntries[] = {
     {"_medHMM_FBalgC", (DL_FUNC) &_medHMM_FBalgC, 10},
     {"_medHMM_FBalgCF", (DL_FUNC) &_medHMM_FBalgCF, 11},
+    {"_medHMM_mult_ed_fb_cpp", (DL_FUNC) &_medHMM_mult_ed_fb_cpp, 10},
     {NULL, NULL, 0}
 };
 

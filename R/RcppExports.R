@@ -11,3 +11,8 @@ FBalgCF <- function(y2, m, delta, pr, Mx, Mx2, gamma, d, S, S2, S3) {
     .Call('_medHMM_FBalgCF', PACKAGE = 'medHMM', y2, m, delta, pr, Mx, Mx2, gamma, d, S, S2, S3)
 }
 
+#' @keywords internal
+mult_ed_fb_cpp <- function(m, n, delta, allprobs, Mx, Mx2, gamma, d, S, S2) {
+    .Call('_medHMM_mult_ed_fb_cpp', PACKAGE = 'medHMM', m, n, delta, allprobs, Mx, Mx2, gamma, d, S, S2)
+}
+
