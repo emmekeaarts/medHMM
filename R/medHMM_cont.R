@@ -443,8 +443,8 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, mcmc
     # Initalize priors and hyper priors --------------------------------
     # Initialize gamma sampler
     if(is.null(gamma_sampler)) {
-        gamma_int_mle0  <- rep(0, m - 1)
-        gamma_scalar    <- 2.93 / sqrt(m - 1)
+        gamma_int_mle0  <- rep(0, m - 2)
+        gamma_scalar    <- 2.93 / sqrt(m - 2)
         gamma_w         <- .1
     } else {
         gamma_int_mle0  <- gamma_sampler$gamma_int_mle0
@@ -612,8 +612,12 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, mcmc
     }
 
     # dwell ============================================================================================================================= Added dwell pars
-    duration_bar		<- matrix(NA_real_, nrow = J, ncol = m * 3)
-    colnames(duration_bar)	<- c(paste("mu_d_bar", 1:m, sep = ""), paste("logsigma2", 1:m, sep = ""), paste("tau2_d_bar", 1:m, sep = ""))
+    # duration_bar		<- matrix(NA_real_, nrow = J, ncol = m * 3)
+    # colnames(duration_bar)	<- c(paste("mu_d_bar", 1:m, sep = ""), paste("logsigma2", 1:m, sep = ""), paste("tau2_d_bar", 1:m, sep = ""))
+    dwell_mu_bar <- matrix(NA_real_, nrow = J, ncol = m)
+    colnames(dwell_mu_bar) <- paste("mu_d_bar", 1:m, sep = "")
+    dwell_var_bar <- matrix(NA_real_, nrow = J, ncol = m)
+    colnames(dwell_var_bar) <- paste("tau2_d_bar", 1:m, sep = "")
 
     # Define object for subject specific posterior density (regression coefficients parameterization )
     gamma_int_subj			<- rep(list(gamma_int_bar), n_subj)
@@ -677,47 +681,32 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, mcmc
 
             # Using the outcomes of the forward backward algorithm, sample the state sequence ==========================================================================
             trans[[s]]				                <- vector("list", m)
-            sample_path[[s]][1, iter] 	<- sample(1:m, 1, prob = delta[[s]] * exp(B_star[,1]))
-            Dur[[s]][1] 			<- sample(1:subj_data[[s]]$Mx, 1, prob = (Occupancy[[1]][sample_path[[s]][1, iter],] / exp(B_star[sample_path[[s]][1, iter],1])))
-            sample_path[[s]][1:Dur[[s]][1], iter] <- sample_path[[s]][1, iter]
+            sample_path[[s]][1, iter] 	            <- sample(1:m, 1, prob = delta[[s]] * exp(B_star[,1]))
+            Dur[[s]][1] 			                <- sample(1:subj_data[[s]]$Mx, 1, prob = (Occupancy[[1]][sample_path[[s]][1, iter],] / exp(B_star[sample_path[[s]][1, iter],1])))
+            sample_path[[s]][1:Dur[[s]][1], iter]   <- sample_path[[s]][1, iter]
+
             t <- 1
             while(sum(Dur[[s]]) < subj_data[[s]]$n){
-                t 						<- t + 1
-                Mx.l 					<- min(subj_data[[s]]$Mx, subj_data[[s]]$n-sum(Dur[[s]]))
-                sample_path[[s]][t, iter] 	<- sample(1:m, 1, prob = gamma[[s]][sample-path[[s]][t-1, iter],] * exp(B_star[,sum(Dur[[s]])+1]))
-                trans[[mi]][[sample_path[[s]][t-1, iter]]] <- c(trans[[s]][[sample_path[[s]][t-1, iter]]], sample_path[[s]][t, iter])
-                Dur[[s]][t]			<- sample(1:Mx.l, 1, prob = (Occupancy[[sum(Dur[[s]])+1]][sample_path[[s]][t, iter],] / exp(B_star[sample_path[[s]][t, iter], sum(Dur[[s]])+1])))
-                sample_path[[s]][sum(Dur[[s]][1:t-1],1):sum(Dur[[s]]), iter] <- sample_path[[s]][t, iter]
+                t 						                                        <- t + 1
+                Mx.l 					                                        <- min(subj_data[[s]]$Mx, subj_data[[s]]$n-sum(Dur[[s]]))
+                sample_path[[s]][t, iter] 	                                    <- sample(1:m, 1, prob = gamma[[s]][sample-path[[s]][t-1, iter],] * exp(B_star[,sum(Dur[[s]])+1]))
+                trans[[s]][[sample_path[[s]][t-1, iter]]]                       <- c(trans[[s]][[sample_path[[s]][t-1, iter]]], sample_path[[s]][t, iter])
+                Dur[[s]][t]			                                            <- sample(1:Mx.l, 1, prob = (Occupancy[[sum(Dur[[s]])+1]][sample_path[[s]][t, iter],] / exp(B_star[sample_path[[s]][t, iter], sum(Dur[[s]])+1])))
+                sample_path[[s]][sum(Dur[[s]][1:t-1],1):sum(Dur[[s]]), iter]    <- sample_path[[s]][t, iter]
             }
+
             n.Dur[s] <- length(Dur[[s]])
             for (i in 1:m){
-                cond_y[[s]][[i]] <- subj_data[[s]]$y[sample_path[[s]][, iter] == i]
-            }
-
-
-
-
-            # Run forward algorithm, obtain subject specific forward proababilities and log likelihood
-            forward				<- cont_mult_fw_r_to_cpp(x = subj_data[[s]]$y, m = m, emiss = emiss[[s]], gamma = gamma[[s]], n_dep = n_dep, delta=NULL)
-            alpha         <- forward[[1]]
-            c             <- max(forward[[2]][, subj_data[[s]]$n])
-            llk           <- c + log(sum(exp(forward[[2]][, subj_data[[s]]$n] - c)))
-            PD_subj[[s]][iter, sum(n_dep * m * 2) + m * m + 1] <- llk
-
-            # Using the forward probabilites, sample the state sequence in a backward manner.
-            # In addition, saves state transitions in trans, and conditional observations within states in cond_y
-            trans[[s]]					                  <- vector("list", m)
-            sample_path[[s]][n_vary[[s]], iter] 	<- sample(1:m, 1, prob = c(alpha[, n_vary[[s]]]))
-            for(t in (subj_data[[s]]$n - 1):1){
-                sample_path[[s]][t,iter] 	              <- sample(1:m, 1, prob = (alpha[, t] * gamma[[s]][,sample_path[[s]][t + 1, iter]]))
-                trans[[s]][[sample_path[[s]][t,iter]]]	<- c(trans[[s]][[sample_path[[s]][t, iter]]], sample_path[[s]][t + 1, iter])
-            }
-            for (i in 1:m){
-                trans[[s]][[i]] <- c(trans[[s]][[i]], 1:m)
-                trans[[s]][[i]] <- rev(trans[[s]][[i]])
-                for(q in 1:n_dep){
-                    cond_y[[s]][[i]][[q]] <- c(subj_data[[s]]$y[sample_path[[s]][, iter] == i, q])
+                # trans[[s]][[i]]         <- c(trans[[s]][[i]], 1:m) # to avoid errors, check if we can drop
+                for (q in 1:n_dep) {
+                    # cond_y[[s]][[i]]    <- subj_data[[s]]$y[sample_path[[s]][, iter] == i, q]
+                    if(iter == 2){
+                        cond_y[[s]][[i]][[q]] <- c(subj_data[[s]]$y[sample_path[[s]][, iter] == i, q][!is.na(subj_data[[s]]$y[sample_path[[s]][, iter] == i, q])],emiss_mu0[[q]][1,i])
+                    } else {
+                        cond_y[[s]][[i]][[q]] <- c(subj_data[[s]]$y[sample_path[[s]][, iter] == i, q][!is.na(subj_data[[s]]$y[sample_path[[s]][, iter] == i, q])],emiss_c_mu_bar[[i]][[q]][1])
+                    }
                 }
+
             }
         }
 
@@ -727,31 +716,38 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, mcmc
             # Obtain MLE of the covariance matrices and log likelihood of gamma and emiss at subject and population level -----------------
             # used to scale the propasal distribution of the RW Metropolis sampler
 
-            # population level, transition matrix
-            trans_pooled			  <- factor(c(unlist(sapply(trans, "[[", i)), c(1:m)))
+            # population level, transition matrix ============================================================ Check number of categories in gamma_int_mle0
+            trans_pooled			<- factor(c(unlist(sapply(trans, "[[", i)), c(1:m)[-i]))
+            trans_pooled            <- factor(trans_pooled, levels = paste(c(1:m)[-i]))
+            trans_pooled            <- as.numeric(trans_pooled)
             gamma_mle_pooled		<- optim(gamma_int_mle0, llmnl_int, Obs = trans_pooled,
-                                       n_cat = m, method = "BFGS", hessian = TRUE,
+                                       method = "BFGS", hessian = FALSE,
                                        control = list(fnscale = -1))
-            gamma_int_mle_pooled[[i]]  <- gamma_mle_pooled$par
-            gamma_pooled_ll[[i]]			<- gamma_mle_pooled$value
+
+            gamma_int_mle_pooled[[i]]   <- gamma_mle_pooled$par
+            gamma_pooled_ll[[i]]        <- gamma_mle_pooled$value
 
             # subject level
             for (s in 1:n_subj){
-                wgt 				<- subj_data[[s]]$n / n_total
+                wgt 		        <- subj_data[[s]]$n / n_total
 
-                # subject level, transition matrix
-                gamma_out					<- optim(gamma_int_mle_pooled[[i]], llmnl_int_frac, Obs = c(trans[[s]][[i]], c(1:m)),
+                trans_subj          <- factor(c(trans[[s]][[i]], c(1:m)[-i]))
+                trans_subj          <- factor(trans_subj, levels = paste(c(1:m)[-i]))
+                trans_subj          <- as.numeric(trans_subj)
+
+                # subject level, transition matrix ============================================================ Check number of categories in gamma_int_mle_pooled
+                gamma_out			<- optim(gamma_int_mle_pooled[[i]], llmnl_int_frac, Obs = trans_subj,
                                        n_cat = m, pooled_likel = gamma_pooled_ll[[i]], w = gamma_w, wgt = wgt,
-                                       method="BFGS", hessian = TRUE, control = list(fnscale = -1))
+                                       method="BFGS", hessian = FALSE, control = list(fnscale = -1))
                 if(gamma_out$convergence == 0){
                     subj_data[[s]]$gamma_converge[i] <- 1
                     subj_data[[s]]$gamma_int_mle[i,] <- gamma_out$par
-                    subj_data[[s]]$gamma_mhess[(1 + (i - 1) * (m - 1)):((m - 1) + (i - 1) * (m - 1)), ]	<-
-                        mnlHess_int(int = gamma_out$par, Obs = c(trans[[s]][[i]], c(1:m)), n_cat =  m)
+                    subj_data[[s]]$gamma_mhess[(1 + (i - 1) * (m - 2)):((m - 2) + (i - 1) * (m - 2)), ]	<-
+                        mnlHess_int(int = gamma_out$par, Obs = c(trans[[s]][[i]], c(1:m)), n_cat =  (m-1) )
                 } else {
                     subj_data[[s]]$gamma_converge[i] <- 0
-                    subj_data[[s]]$gamma_int_mle[i,] <- rep(0, m - 1)
-                    subj_data[[s]]$gamma_mhess[(1 + (i - 1) * (m - 1)):((m - 1) + (i - 1) * (m - 1)), ]	<- diag(m-1)
+                    subj_data[[s]]$gamma_int_mle[i,] <- rep(0, m - 2)
+                    subj_data[[s]]$gamma_mhess[(1 + (i - 1) * (m - 2)):((m - 2) + (i - 1) * (m - 2)), ]	<- diag(m-2)
                 }
 
                 # if this is first iteration, use MLE for current values RW metropolis sampler
@@ -767,7 +763,7 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, mcmc
             gamma_V_int[[i]]      <- solve(rwish(S = solve(gamma_V_n), v = gamma_nu + n_subj))
             gamma_mu_int_bar[[i]] <- gamma_mu0_n + solve(chol(t(xx[[1]]) %*% xx[[1]] + gamma_K0)) %*% matrix(rnorm((m - 1) * nx[1]), nrow = nx[1]) %*% t(solve(chol(solve(gamma_V_int[[i]]))))
             gamma_exp_int				  <- matrix(exp(c(0, gamma_mu_int_bar[[i]][1,] )), nrow  = 1)
-            gamma_mu_prob_bar[[i]] 	<- gamma_exp_int / as.vector(gamma_exp_int %*% c(rep(1,(m))))
+            gamma_mu_prob_bar[[i]] 	<- gamma_exp_int / as.vector(gamma_exp_int %*% c(rep(1,(m-1))))
 
             # sample population mean (and regression parameters if covariates) of the Normal emission distribution, and it's variance (so the variance between the subject specific means)
             # note: the posterior is thus one of a Bayesian linear regression because of the optional regression parameters
@@ -778,31 +774,33 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, mcmc
                                                                                                t(emiss_mu0[[q]][,i]) %*% emiss_K0[[q]] %*% emiss_mu0[[q]][,i] -
                                                                                                t(emiss_mu0_n) %*% (t(xx[[1 + q]]) %*% xx[[1 + q]] + emiss_K0[[q]]) %*% emiss_mu0_n) / 2
                 emiss_V_mu[[i]][[q]]       <- solve(stats::rgamma(1, shape = emiss_a_mu_n, rate = emiss_b_mu_n))
-                if(all(dim(emiss_V_mu[[i]][[q]]) == c(1,1))){ # CHECH THIS
-                    # emiss_c_mu_bar[[i]][[q]]	  <- emiss_mu0_n + rnorm(1 + nx[1 + q] - 1, mean = 0, sd = sqrt(as.numeric(emiss_V_mu[[i]][[q]]) * solve(t(xx[[1 + q]]) %*% xx[[1 + q]] + emiss_K0[[q]]))) # This step may produce negative values which is not acceptable
+                if(all(dim(emiss_V_mu[[i]][[q]]) == c(1,1))){
                     emiss_c_mu_bar[[i]][[q]]	  <- emiss_mu0_n + rnorm(1 + nx[1 + q] - 1, mean = 0, sd = sqrt(diag(as.numeric(emiss_V_mu[[i]][[q]]) * solve(t(xx[[1 + q]]) %*% xx[[1 + q]] + emiss_K0[[q]]))))
                 } else {
-                    # emiss_c_mu_bar[[i]][[q]]	  <- emiss_mu0_n + rnorm(1 + nx[1 + q] - 1, mean = 0, sd = sqrt(emiss_V_mu[[i]][[q]] * solve(t(xx[[1 + q]]) %*% xx[[1 + q]] + emiss_K0[[q]])))
                     emiss_c_mu_bar[[i]][[q]]	  <- emiss_mu0_n + rnorm(1 + nx[1 + q] - 1, mean = 0, sd = sqrt(diag(emiss_V_mu[[i]][[q]] * solve(t(xx[[1 + q]]) %*% xx[[1 + q]] + emiss_K0[[q]]))))
                 }
-                # emiss_c_mu_bar[[i]][[q]]	  <- emiss_mu0_n + rnorm(1 + nx[1 + q] - 1, mean = 0, sd = sqrt(emiss_V_mu[[i]][[q]] * solve(t(xx[[1 + q]]) %*% xx[[1 + q]] + emiss_K0[[q]])))
-                # if(i > 1){
-                #   if(emiss_c_mu_bar[[i]][[q]] < emiss_c_mu_bar[[i-1]][[q]]){
-                #     label_switch[i,q] <- label_switch[i,q] + 1
-                #
-                #   }
-                # }
             }
 
             # Sample subject values  -----------
             for (s in 1:n_subj){
+
+                trans_subj          <- factor(c(trans[[s]][[i]]))
+                trans_subj          <- factor(trans_subj, levels = paste(c(1:m)[-i]))
+                trans_subj          <- as.numeric(trans_subj)
+
                 # Sample subject values for gamma using RW Metropolis sampler   ---------
-                gamma_candcov_comb 			<- chol2inv(chol(subj_data[[s]]$gamma_mhess[(1 + (i - 1) * (m - 1)):((m - 1) + (i - 1) * (m - 1)), ] + chol2inv(chol(gamma_V_int[[i]]))))
-                gamma_RWout					    <- mnl_RW_once(int1 = gamma_c_int[[i]][s,], Obs = trans[[s]][[i]], n_cat = m, mu_int_bar1 = c(t(gamma_mu_int_bar[[i]]) %*% xx[[1]][s,]), V_int1 = gamma_V_int[[i]], scalar = gamma_scalar, candcov1 = gamma_candcov_comb)
-                gamma[[s]][i,]  	      <- PD_subj[[s]][iter, c((n_dep * 2 * m + 1 + (i - 1) * m):(n_dep * 2 * m + (i - 1) * m + m))] <- gamma_RWout$prob
-                gamma_naccept[s, i]			<- gamma_naccept[s, i] + gamma_RWout$accept
-                gamma_c_int[[i]][s,]		<- gamma_RWout$draw_int
-                gamma_int_subj[[s]][iter, (1 + (i - 1) * (m - 1)):((m - 1) + (i - 1) * (m - 1))] <- gamma_c_int[[i]][s,]
+                gamma_candcov_comb 		<- chol2inv(chol(subj_data[[s]]$gamma_mhess[(1 + (i - 1) * (m - 2)):((m - 2) + (i - 1) * (m - 2)), ] + chol2inv(chol(gamma_V_int[[i]]))))
+                gamma_RWout				<- mnl_RW_once(int1 = gamma_c_int[[i]][s,],
+                                              Obs = trans_subj,
+                                              n_cat = m-1,
+                                              mu_int_bar1 = c(t(gamma_mu_int_bar[[i]]) %*% xx[[1]][s,]),
+                                              V_int1 = gamma_V_int[[i]],
+                                              scalar = gamma_scalar,
+                                              candcov1 = gamma_candcov_comb)
+                gamma[[s]][i,]  	    <- PD_subj[[s]][iter, c((n_dep * 2 * m + 1 + (i - 1) * m):(n_dep * 2 * m + (i - 1) * m + m))[-i]] <- gamma_RWout$prob
+                gamma_naccept[s, i]		<- gamma_naccept[s, i] + gamma_RWout$accept
+                gamma_c_int[[i]][s,]	<- gamma_RWout$draw_int
+                gamma_int_subj[[s]][iter, c((1 + (i - 1) * (m - 1)):((m - 1) + (i - 1) * (m - 1)))[-i]] <- gamma_c_int[[i]][s,]
 
                 if(i == m){
                     delta[[s]] 		<- solve(t(diag(m) - gamma[[s]] + 1), rep(1, m))
@@ -832,6 +830,45 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, mcmc
                     emiss[[s]][[q]][i,2] <- PD_subj[[s]][iter, (n_dep * m + (q - 1) * m + i)] <- emiss_c_V[[i]][[q]]
                 }
             }
+
+
+            #################
+            # Obtain hierarchical and mouse specific parameters for duration distribuiton using gibbs sampler ====================================
+            #################
+
+            #draw logmu's
+            for(s in 1:n_subj){
+                tau2 		<- 1/ ((1/tau2_d_bar[i]) + (1/logsigma2[i]) * sum(sample_path[[s]][-n.Dur[s], iter] == i))
+                logmu[s,i]	<- rnorm(1,
+                                     mean = tau2 * ((1/tau2_d_bar[i]) * mu_d_bar[i] + (1/logsigma2[i]) * sum(log(Dur[[s]][-n.Dur[s]][sample_path[[s]][-n.Dur[s], iter] == i]))),
+                                     sd = sqrt(tau2))
+                PD_subj[[s]][iter, n_dep*m*2 + m*m + i]			<- logmu[s, i] # adjust index
+            }
+
+            # draw mu_d_bar
+            s2				<- 1 / ((1/s2_0[i]) + (1/tau2_d_bar[i]) * n_subj)
+            mu_d_bar[i] 	<- rnorm(1,
+                                  mean = s2 * ((1/s2_0[i]) * d_mu0[i] + (1/tau2_d_bar[i]) * sum(logmu[,i])),
+                                  sd = sqrt(s2))
+
+            # draw tau2_d_bar
+            a1 <- alpha.tau20 + n_subj/2
+            b1 <- beta.tau20 + (1/2) * (sum((logmu[,i] - mu_d_bar[i])^2))
+            tau2_d_bar[i] <- 1 / rgamma(1, shape = a1, rate = b1)
+
+            #draw logsigma
+            ss <- numeric(1)
+            n.ss <- numeric(1)
+            for (s in 1:n_subj){
+                ss <- ss + sum((log(Dur[[s]][-n.Dur[s]][sample_path[[s]][-n.Dur[mi], iter] == i]) - logmu[s,i])^2)
+                n.ss <- n.ss + sum(sample_path[[s]][-n.Dur[s], iter] == i)
+            }
+            c1 <- alpha.sigma20 + n.ss/2
+            d1 <- beta.sigma20 + (1/2) * ss
+            PD_subj[[s]][iter, n_dep*m*2 + m*m + m + i] <- logsigma2[i] <- 1 / rgamma(1, shape = c1, rate = d1)
+            # compare n.ss with length(unlist(sapply(Trans, "[[", i))) -> why?
+
+
         }
 
 
@@ -850,12 +887,17 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, mcmc
             ))
             if(nx[1+q] > 1){
                 emiss_cov_bar[[q]][iter, ]  <- as.vector(unlist(lapply(
-                    # lapply(emiss_mu_int_bar, "[[", q), "[",-1,)
-                    lapply(emiss_c_mu_bar, "[[", q), "[",-1,) # CHECK THIS
+                    lapply(emiss_c_mu_bar, "[[", q), "[",-1,)
                 ))
             }
             emiss_varmu_bar[[q]][iter,]	<- as.vector(unlist(sapply(emiss_V_mu, "[[", q)))
         }
+
+        # dwell time parameters
+        # duration_bar[iter,] <- c(mu_d_bar, logsigma2, tau2_d_bar)
+        dwell_mu_bar[iter, ] <- mu_d_bar
+        dwell_var_bar[iter, ] <- tau2_d_bar
+
         if(show_progress == TRUE){
             utils::setTxtProgressBar(pb, iter)
         }
@@ -876,6 +918,7 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, mcmc
                     emiss_cov_bar = emiss_cov_bar, gamma_prob_bar = gamma_prob_bar,
                     emiss_mu_bar = emiss_mu_bar, gamma_naccept = gamma_naccept,
                     emiss_varmu_bar = emiss_varmu_bar, emiss_var_bar = emiss_var_bar,
+                    dwell_mu_bar = dwell_mu_bar, dwell_var_bar = dwell_var_bar,
                     sample_path = sample_path, label_switch = label_switch)
     } else {
         out <- list(input = list(m = m, n_dep = n_dep, J = J,
@@ -885,8 +928,9 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, mcmc
                     emiss_cov_bar = emiss_cov_bar, gamma_prob_bar = gamma_prob_bar,
                     emiss_mu_bar = emiss_mu_bar, gamma_naccept = gamma_naccept,
                     emiss_varmu_bar = emiss_varmu_bar, emiss_var_bar = emiss_var_bar,
+                    dwell_mu_bar = dwell_mu_bar, dwell_var_bar = dwell_var_bar,
                     label_switch = label_switch)
     }
-    class(out) <- append(class(out), "mHMM_cont")
+    class(out) <- append(class(out), "medHMM_cont")
     return(out)
 }
