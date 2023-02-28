@@ -14,10 +14,10 @@ medHMM_cont(
   dwell_hyp_prior,
   mcmc,
   return_path = FALSE,
-  print_iter,
   show_progress = TRUE,
   gamma_hyp_prior = NULL,
-  gamma_sampler = NULL
+  gamma_sampler = NULL,
+  max_dwell = NULL
 )
 }
 \arguments{
@@ -128,9 +128,6 @@ the sampled state sequence is quite a large object, hence the default
 setting is \code{sample_path = FALSE}. Can be used for local decoding
 purposes.}
 
-\item{print_iter}{The argument print_iter is depricated; please use
-show_progress instead to show the progress of the algorithm.}
-
 \item{show_progress}{A logical scaler. Should the function show a text
 progress bar in the \code{R} console to represent the progress of the
 algorithm (\code{show_progress = TRUE}) or not (\code{show_progress =
@@ -193,6 +190,9 @@ Default settings are: all elements in \code{gamma_int_mle0} set to 0,
 0.1. See the section \emph{Scaling the proposal distribution of the RW
 Metropolis sampler} in \code{vignette("estimation-mhmm")} for details.
 }}
+
+\item{print_iter}{The argument print_iter is depricated; please use
+show_progress instead to show the progress of the algorithm.}
 }
 \value{
 \code{mHMM_cont} returns an object of class \code{mHMM_cont}, which has
@@ -337,41 +337,70 @@ are fixed over subjects.
 \examples{
 ###### Example on simulated data
 # simulating multivariate continuous data
-n_t     <- 100
-n       <- 10
-m       <- 3
-n_dep   <- 2
 
-gamma   <- matrix(c(0.8, 0.1, 0.1,
-                    0.2, 0.7, 0.1,
-                    0.2, 0.2, 0.6), ncol = m, byrow = TRUE)
+# 3 states
+n_t <- 500
+n <- 20
+m <- 3
+n_dep <- 2
 
-emiss_distr <- list(matrix(c( 5, 1,
-                              10, 1,
-                              15, 1), nrow = m, byrow = TRUE),
-                    matrix(c(0.5, 0.1,
-                             1.0, 0.2,
-                             2.0, 0.1), nrow = m, byrow = TRUE))
 
-data_cont <- sim_mHMM(n_t = n_t, n = n, m = m, n_dep = n_dep, data_distr = 'continuous',
-                  gamma = gamma, emiss_distr = emiss_distr, var_gamma = .1, var_emiss = c(.5, 0.01))
+gamma <- matrix(c(0, 0.7, 0.3,
+                  0.5, 0, 0.5,
+                  0.6, 0.4, 0), nrow = m, ncol = m, byrow = TRUE)
+
+emiss_distr <- list(matrix(c(10,2,
+                             50,2,
+                             2,2), nrow = m, ncol = 2, byrow = TRUE),
+                    matrix(c(-5,2,
+                             -20,2,
+                             5,2), nrow = m, ncol = 2, byrow = TRUE))
+
+dwell_distr <- dwell_start <- matrix(log(c(50,2,
+                                           10,2,
+                                           2,2)), nrow = m, ncol = 2, byrow = TRUE)
+
+# Simulate data
+sim_data <- sim_medHMM(n_t, n, data_distr = 'continuous', m, n_dep = n_dep,
+                       dwell_distr = dwell_distr, dwell_type = 'logNormal',
+                       start_state = NULL, q_emiss = NULL, gamma = gamma, emiss_distr = emiss_distr, xx_vec = NULL, beta = NULL,
+                       var_gamma = 0.1, var_emiss = c(0.1,0.1), var_dwell = 0.01, return_ind_par = TRUE)
 
 # Specify hyper-prior for the continuous emission distribution
-hyp_pr <- list(
-               emiss_mu0 = list(matrix(c(3,7,17), nrow = 1), matrix(c(0.7, 0.8, 1.8), nrow = 1)),
-               emiss_K0  = list(1, 1),
-               emiss_nu  = list(1, 1),
-               emiss_V   = list(rep(2, m), rep(1, m)),
-               emiss_a0  = list(rep(1, m), rep(1, m)),
-               emiss_b0  = list(rep(1, m), rep(1, m)))
+emiss_hyp_pr <- list(
+    emiss_mu0 = list(matrix(c(10,50,2), nrow = 1),
+                     matrix(c(-5, -20, 5), nrow = 1)),
+    emiss_K0  = list(1, 1),
+    emiss_nu  = list(1, 1),
+    emiss_V   = list(rep(100, m), rep(100, m)),
+    emiss_a0  = list(rep(0.01, m), rep(0.01, m)),
+    emiss_b0  = list(rep(0.01, m), rep(0.01, m))
+)
+
+# Specify hyper-prior for the dwelling time (log-normal) distribution
+dwell_hyp_pr <- list(
+    d_mu0			= log(c(20,10,2)),
+    s2_0			= log(rep(100, m)),
+    alpha.sigma20	= rep(0.01, m),
+    beta.sigma20	= rep(0.01, m),
+    alpha.tau20		= rep(0.01, m),
+    beta.tau20		= rep(0.01, m)
+)
+
 
 # Run the model on the simulated data:
-out_3st_cont_sim <- medHMM_cont(s_data = data_cont$obs,
-                    gen = list(m = m, n_dep = n_dep),
-                    start_val = c(list(gamma), emiss_distr),
-                    emiss_hyp_prior = hyp_pr,
-                    mcmc = list(J = 11, burn_in = 5))
+out <- medHMM_cont(s_data = sim_data$obs,
+                   gen = list(m = m, n_dep = n_dep),
+                   start_val = c(list(gamma), emiss_distr, list(dwell_start)),
+                   emiss_hyp_prior = emiss_hyp_pr,
+                   dwell_hyp_prior = dwell_hyp_pr,
+                   show_progress = TRUE,
+                   mcmc = list(J = 200, burn_in = 100), return_path = TRUE, max_dwell = 120)
 
+# To do:
+#   - Improve function structure and output for 2 states
+#   - Make sure function works for covariates
+#   - Improve stability of function implementing control checks
 
 }
 \references{

@@ -267,11 +267,10 @@ state one.
 ###### Example on simulated data
 Simulating multivariate continuous data
 Define model parameters:
-n_t <- 100
-n <- 5
+n_t <- 200
+n <- 20
 m <- 3
 n_dep <- 2
-# n_dep <- 1
 
 
 gamma <- matrix(c(0, 0.7, 0.3,
@@ -285,15 +284,14 @@ emiss_distr <- list(matrix(c(10,2,
                              -20,2,
                              5,2), nrow = m, ncol = 2, byrow = TRUE))
 
-dwell_type <- "logNormal"
-dwell_distr <- matrix(log(c(10,2,
-                        5,2,
-                        4,3)), nrow = m, ncol = 2, byrow = TRUE)
+dwell_distr <- dwell_start <- matrix(log(c(20,2,
+                                           10,2,
+                                           2,2)), nrow = m, ncol = 2, byrow = TRUE)
 
 # Simulate data
-sim_data <- sim_medHSMM(n_t, n, data_distr = 'continuous', m, n_dep = n_dep,
-                      dwell_distr = dwell_distr, dwell_type = 'logNormal', hsmm_type = "explicit_duration", simple_bound = TRUE,
-                      start_state = NULL, q_emiss = NULL, gamma = gamma, emiss_distr = emiss_distr, xx_vec = NULL, beta = NULL,
-                      var_gamma = 0, var_emiss = c(0,0), var_dwell = 0, return_ind_par = TRUE)
-                      # var_gamma = 0, var_emiss = 0, var_dwell = 0, return_ind_par = TRUE)
+sim_data <- sim_medHMM(n_t, n, data_distr = 'continuous', m, n_dep = n_dep,
+                       dwell_distr = dwell_distr, dwell_type = 'logNormal',
+                       start_state = NULL, q_emiss = NULL, gamma = gamma, emiss_distr = emiss_distr, xx_vec = NULL, beta = NULL,
+                       var_gamma = 0.1, var_emiss = c(0.1,0.1), var_dwell = 0.01, return_ind_par = TRUE)
+
 }
