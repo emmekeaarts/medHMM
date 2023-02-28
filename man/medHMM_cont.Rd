@@ -58,13 +58,17 @@ probability matrix or a specific emission distribution is not predicted by
 covariates.}
 
 \item{start_val}{List containing the start values for the transition
-probability matrix gamma and the emission distribution(s). The first
+probability matrix gamma, the emission distribution(s), and the dwell time
+distributions. The first
 element of the list contains a \code{m} by \code{m} matrix with the start
-values for gamma. The subsequent elements are matrices with \code{m} rows
+values for gamma. The subsequent \code{n_dep} elements are matrices with
+\code{m} rows
 and 2 columns; the first column denoting the mean of state \emph{i} (row
 \emph{i}) and the second column denoting the variance of state \emph{i}
-(row \emph{i}) of the Normal distribution. Note that \code{start_val}
-should not contain nested lists (i.e., lists within lists).}
+(row \emph{i}) of the Normal distribution. The last element contains a
+matrix of \code{m} rows and 2 columns with the start values for the dwell time
+distribution. Note that \code{start_val} should not contain nested lists
+(i.e., lists within lists).}
 
 \item{emiss_hyp_prior}{A list containing user specified parameters
 of the hyper-prior distribution on the Normal (i.e., Gaussian) emission
@@ -108,6 +112,44 @@ to each of the dependent variables \code{k}, where each element is a vector
 with lenght \code{m} containing the scale values of the Inverse Gamma
 hyper-prior on each of fixed variances of the Normal emission distribuitons
 (note: here the standard Inverse Gamma parametrization is used).}}
+Note that \code{emiss_K0} and \code{emiss_nu} are assumed
+equal over the states.}
+
+\item{dwell_hyp_prior}{A list containing user specified parameters
+of the hyper-prior distribution on the log-Normal (i.e., log-Gaussian)
+dwell time distribution for each of the states. The hyper-prior connected
+to the log-means of the log-Normal state dwell time distribution(s) is a
+Normal-Inverse-Gamma distribution (i.e., assuming both unknown population
+mean and variance between subject level means). The hyper-prior on each of
+fixed variances of the Normal emission distributions is an Inverse gamma
+distribution (i.e., assuming a known mean). Note that the values used as
+log-mean priors are to be entered in the logarithmic scale.
+
+Hence, the list \code{dwell_hyp_prior} contains the following elements:
+\itemize{\item{\code{d_mu0}: a vector of \code{m} elements denoting the
+hypothesized mean values of the log-Normal dwell distribution for each of
+the states in the logarithmic scale}.
+\item{\code{s2_0}: a vector with lenght \code{m} containing the
+hypothesized variances between the between subject level means of the
+Inverse Gamma hyper-prior distribution connected to the dwell distribution
+log-means (note: here, the Inverse Gamma hyper-prior distribution is
+parametrized as a scaled inverse chi-squared distribution).}
+\item{\code{alpha.sigma20}: a vector with lenght \code{m} containing the
+shape values of the Inverse Gamma hyper-prior on each of fixed variances of
+the log-Normal dwell distribution (note: here the standard Inverse Gamma
+parametrization is used).}
+\item{\code{beta.sigma20}: a vector with lenght \code{m} containing the
+scale values of the Inverse Gamma hyper-prior on each of fixed variances of
+the log-Normal dwell distribution (note: here the standard Inverse Gamma
+parametrization is used).}
+\item{\code{alpha.tau20}: a vector with lenght \code{m} containing the
+shape values of the Inverse Gamma hyper-prior on each of the between subject
+variances of the Normal prior on the dwell distribution (note: here the
+standard Inverse Gamma parametrization is used).}
+\item{\code{beta.tau20}: a vector with lenght \code{m} containing the
+scale values of the Inverse Gamma hyper-prior on each of the between subject
+variances of the Normal prior on the dwell distribution (note: here the
+standard Inverse Gamma parametrization is used).}}
 Note that \code{emiss_K0} and \code{emiss_nu} are assumed
 equal over the states.
 
@@ -191,6 +233,12 @@ Default settings are: all elements in \code{gamma_int_mle0} set to 0,
 Metropolis sampler} in \code{vignette("estimation-mhmm")} for details.
 }}
 
+\item{max_dwell}{An optional value for the maximal dwell time in discrete
+time steps allowed for the states. Lower values in \code{max_dwell} improve
+the speed of the algorithm at the risk of underestimating the duration of
+states. When omitted, it defaults to the number of occasions on each
+subject (that os, all possible durations are assessed).}
+
 \item{print_iter}{The argument print_iter is depricated; please use
 show_progress instead to show the progress of the algorithm.}
 }
@@ -204,7 +252,8 @@ subject level parameter estimates and the log likelihood over the
 iterations of the hybrid Metropolis within Gibbs sampler. The iterations of
 the sampler are contained in the rows, and the columns contain the subject
 level estimates of subsequently the emission means, the (fixed over subjects)
-emission variances, the transition probabilities and the log likelihood.}
+emission variances, the transition probabilities, the dwell time log-means,
+the (fixed over subjects) dwell log-variances, and the log likelihood.}
 \item{\code{gamma_prob_bar}}{A matrix containing the group level parameter
 estimates of the transition probabilities over the iterations of the hybrid
 Metropolis within Gibbs sampler. The iterations of the sampler are
@@ -264,15 +313,15 @@ emission means within each of the dependent variables over the iterations
 of the Gibbs sampler. The iterations of the sampler are contained in the
 rows  of the matrix, and the columns contain the group level regression
 coefficients.}
-\item{\code{label_switch}}{A matrix of \code{m} rows and \code{n_dep}
-columns containing the percentage of times the group mean of the emission
-distriubion of state \code{i} was sampled to be a smaller value compared to
-the group mean of of the emission distriubion of state \code{i-1}. If the
-state dependent means of the emission distributions were given in a ranked
-order (low to high) to both the start values and hyper-priors, a high
-percentage in \code{label_switch} indicates that label switching possibly
-poses a problem in the analysis, and further diagnostics (e.g.,
-traceplots and posterior distributions) should be inspected.}
+\item{\code{dwell_mu_bar}}{A matrix denoting the group level means of the
+log-Normal dwell distribution over the iterations of the Gibbs
+sampler. The iterations of the sampler are contained in the rows of the
+matrix, and the columns contain the group level dwell log-means. Note that
+the log-means are returned in the logarithmic scale.}
+\item{\code{dwell_var_bar}}{A matrix denoting the (fixed over subjects)
+variance of the log-Normal dwell distribution over the iterations of the
+Gibbs sampler. The iterations of the sampler are contained in the rows of
+the matrix, and the columns contain the group level dwell variances.}
 \item{\code{input}}{Overview of used input specifications: the number of
 states \code{m}, the number of used dependent variables \code{n_dep}, the
 number of iterations \code{J} and the specified burn in period
@@ -415,11 +464,7 @@ out <- medHMM_cont(s_data = sim_data$obs,
 \insertRef{zucchini2017}{mHMMbayes}
 }
 \seealso{
-\code{\link{sim_mHMM}} for simulating multilevel hidden Markov data,
-\code{\link{vit_mHMM}} for obtaining the most likely hidden state sequence
-for each subject using the Viterbi algorithm, \code{\link{obtain_gamma}}
-and \code{\link{obtain_emiss}} for obtaining the transition or emission
-distribution probabilities of a fitted model at the group or subject level,
-and \code{\link{plot.mHMM}} for plotting the posterior densities of a
-fitted model.
+\code{\link{sim_medHMM}} for simulating multilevel hidden Markov
+data, and \code{\link{vit_medHMM}} for obtaining the most likely hidden
+state sequence for each subject using the Viterbi algorithm.
 }
