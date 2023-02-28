@@ -1,366 +1,347 @@
-#' Multilevel explicit duration hidden Markov model using Bayesian estimation
-#' for continuous observations
-#'
-#' \code{medHMM_cont} fits a multilevel (also known as mixed or random effects)
-#' explicit duration
-#' hidden (semi-) Markov model (HMM) to intense longitudinal data with continuous
-#' observations (i.e., normally distributed) of multiple subjects using Bayesian
-#' estimation, and creates an object of class mHMM_cont. By using a multilevel
-#' framework, we allow for heterogeneity in the model parameters between
-#' subjects, while estimating one overall HMM. The function includes the
-#' possibility to add covariates at level 2 (i.e., at the subject level) and
-#' have varying observation lengths over subjects. For a short description of
-#' the package see \link{mHMMbayes}. See \code{vignette("tutorial-mhmm")} for an
-#' introduction to multilevel hidden Markov models and the package, and see
-#' \code{vignette("estimation-mhmm")} for an overview of the used estimation
-#' algorithms.
-#'
-#' Covariates specified in \code{xx} can either be dichotomous or continuous
-#' variables. Dichotomous variables have to be coded as 0/1 variables.
-#' Categorical or factor variables can as yet not be used as predictor
-#' covariates. The user can however break up the categorical variable in
-#' multiple dummy variables (i.e., dichotomous variables), which can be used
-#' simultaneously in the analysis. Continuous predictors are automatically
-#' centered. That is, the mean value of the covariate is subtracted from all
-#' values of the covariate such that the new mean equals zero. This is done such
-#' that the presented probabilities in the output (i.e., for the population
-#' transition probability matrix and population emission probabilities)
-#' correspond to the predicted probabilities at the average value of the
-#' covariate(s).
-#'
-#' If covariates are specified and the user wants to set the values for the
-#' parameters of the hyper-prior distributions manually, the specification of
-#' the elements in the arguments of the hyper-prior parameter values of the
-#' normal distribution on the means change as follows: the number of rows in the
-#' matrices \code{gamma_mu0} and \code{emiss_mu0} are equal to 1 + the number of
-#' covariates used to predict the transition probability matrix for
-#' \code{gamma_mu0} and the emission distribution for \code{emiss_mu0} (i.e.,
-#' the first row correspond to the hyper-prior mean values of the intercepts,
-#' the subsequent rows correspond to the hyper-prior mean values of the
-#' regression coefficients connected to each of the covariates), and
-#' \code{gamma_K0} and \code{emiss_K0} are now a matrix with the number of
-#' hypothetical prior subjects on which the vectors of means (i.e., the rows in
-#' \code{gamma_mu0} or \code{emiss_mu0}) are based on the diagonal, and
-#' off-diagonal elements equal to 0. Note that the hyper-prior parameter values
-#' of the inverse Wishart distribution on the covariance matrix remains
-#' unchanged, as the estimates of the regression coefficients for the covariates
-#' are fixed over subjects.
-#'
-#' @param s_data A matrix containing the observations to be modelled, where the
-#'   rows represent the observations over time. In \code{s_data}, the first
-#'   column indicates subject id number. Hence, the id number is repeated over
-#'   rows equal to the number of observations for that subject. The subsequent
-#'   columns contain the dependent variable(s). Note that the dependent
-#'   variables are assumed to be continuous (i.e., normally distributed
-#'   depending on the hidden states). The total number of rows are equal to the
-#'   sum over the number of observations of each subject, and the number of
-#'   columns are equal to the number of dependent variables (\code{n_dep}) + 1.
-#'   The number of observations can vary over subjects.
-#' @param gen List containing the following elements denoting the general model
-#'   properties:
-#'   \itemize{\item{\code{m}: numeric vector with length 1 denoting the number
-#'   of hidden states}
-#'   \item{\code{n_dep}: numeric vector with length 1 denoting the
-#'   number of dependent variables}}
-#' @param xx An optional list of (level 2) covariates to predict the transition
-#'   matrix and/or the emission probabilities. Level 2 covariate(s) means that
-#'   there is one observation per subject of each covariate. The first element
-#'   in the list \code{xx} is used to predict the transition matrix. Subsequent
-#'   elements in the list are used to predict the emission distribution of (each
-#'   of) the dependent variable(s). Each element in the list is a matrix, with
-#'   the number of rows equal to the number of subjects. The first column of
-#'   each matrix represents the intercept, that is, a column only consisting of
-#'   ones. Subsequent columns correspond to covariates used to predict the
-#'   transition matrix / emission distribution. See \emph{Details} for more
-#'   information on the use of covariates.
-#'
-#'   If \code{xx} is omitted completely, \code{xx} defaults to \code{NULL},
-#'   resembling no covariates. Specific elements in the list can also be left
-#'   empty (i.e., set to \code{NULL}) to signify that either the transition
-#'   probability matrix or a specific emission distribution is not predicted by
-#'   covariates.
-#' @param start_val List containing the start values for the transition
-#'   probability matrix gamma and the emission distribution(s). The first
-#'   element of the list contains a \code{m} by \code{m} matrix with the start
-#'   values for gamma. The subsequent elements are matrices with \code{m} rows
-#'   and 2 columns; the first column denoting the mean of state \emph{i} (row
-#'   \emph{i}) and the second column denoting the variance of state \emph{i}
-#'   (row \emph{i}) of the Normal distribution. Note that \code{start_val}
-#'   should not contain nested lists (i.e., lists within lists).
-#' @param mcmc List of Markov chain Monte Carlo (MCMC) arguments, containing the
-#'   following elements:
-#'   \itemize{\item{\code{J}: numeric vector with length 1 denoting the number
-#'   of iterations of the MCMC algorithm}
-#'   \item{\code{burn_in}: numeric vector with length 1 denoting the
-#'   burn-in period for the MCMC algorithm.}}
-#' @param return_path A logical scalar. Should the sampled state sequence
-#'   obtained at each iteration and for each subject be returned by the function
-#'   (\code{sample_path = TRUE}) or not (\code{sample_path = FALSE}). Note that
-#'   the sampled state sequence is quite a large object, hence the default
-#'   setting is \code{sample_path = FALSE}. Can be used for local decoding
-#'   purposes.
-#' @param print_iter The argument print_iter is depricated; please use
-#'   show_progress instead to show the progress of the algorithm.
-#' @param show_progress A logical scaler. Should the function show a text
-#'   progress bar in the \code{R} console to represent the progress of the
-#'   algorithm (\code{show_progress = TRUE}) or not (\code{show_progress =
-#'   FALSE}). Defaults to \code{show_progress = TRUE}.
-#' @param gamma_hyp_prior An optional list containing user specified parameters
-#'  of the hyper-prior distribution on the multivariate normal distribution
-#'  of the intercepts (and regression coefficients given that covariates are
-#'  used) of the multinomial regression model of the transition probability
-#'  matrix gamma. The hyper-prior of the mean intercepts is a multivariate
-#'  Normal distribution, the hyper-prior of the covariance matrix between the
-#'  set of (state specific) intercepts is an Inverse Wishart distribution.
-#'
-#'  Hence, the list \code{gamma_hyp_prior} contains the following elements:
-#'  \itemize{\item{\code{gamma_mu0}: a list containing m matrices; one matrix
-#'  for each row of the transition probability matrix gamma. Each matrix
-#'  contains the hypothesized mean values of the intercepts. Hence, each matrix
-#'  consists of one row (when not including covariates in the model) and
-#'  \code{m} - 1 columns}
-#'  \item{\code{gamma_K0}: numeric vector with length 1 denoting the number of
-#'  hypothetical prior subjects on which the vector of means \code{gamma_mu0} is
-#'  based}
-#'  \item{\code{gamma_nu}: numeric vector with length 1 denoting the degrees of
-#'  freedom of the Inverse Wishart distribution}
-#'  \item{\code{gamma_V}: matrix of \code{m} - 1 by \code{m} - 1 containing the
-#'  hypothesized variance-covariance matrix between the set of intercepts.}}
-#'  Note that \code{gamma_K0}, \code{gamma_nu} and \code{gamma_V} are assumed
-#'  equal over the states. The mean values of the intercepts (and regression
-#'  coefficients of the covariates) denoted by \code{gamma_mu0} are allowed to
-#'  vary over the states.
-#'
-#'  The default values for the hyper-prior on gamma are: all elements of the
-#'  matrices contained in \code{gamma_mu0} set to 0, \code{gamma_K0} set to 1,
-#'  \code{gamma_nu} set to 3 + m - 1, and the diagonal of \code{gamma_V} (i.e.,
-#'  the variance) set to 3 + m - 1 and the off-diagonal elements (i.e., the
-#'  covariance) set to 0.
-#'
-#'  See \emph{Details} below if covariates are used for changes in the settings
-#'  of the arguments of \code{gamma_hyp_prior}.
-#' @param emiss_hyp_prior A list containing user specified parameters
-#'   of the hyper-prior distribution on the Normal (i.e., Gaussian) emission
-#'   distributions (and regression coefficients given that covariates are used)
-#'   for each of the states. The hyper-prior connected to the means of the
-#'   Normal emission distribution(s) is a Normal-Inverse-Gamma distribution
-#'   (i.e., assuming both unknown populaltion mean and variance between subject
-#'   level means). The hyper-prior on each of fixed variances of the Normal
-#'   emission distribuitons is an Inverse gamma distribution (i.e., assuming a
-#'   known mean).
-#'
-#'  Hence, the list \code{emiss_hyp_prior} contains the following elements:
-#'  \itemize{\item{\code{emiss_mu0}: a list containing \code{n_dep} matrices
-#'  with one row (when not including covariates in the model) and \code{m}
-#'  columns denoting the hypothesized mean values of the Normal emission
-#'  distributions in each of the states for each dependent variable \code{k}}.
-#'  \item{\code{emiss_K0}: a list containing \code{n_dep} elements corresponding
-#'  to each of the dependent variables, where each element is an integer denoting
-#'  the number of hypothetical prior subjects on which the vector of means
-#'  \code{emiss_mu0} is based}.
-#'  \item{\code{emiss_nu}: a list containing \code{n_dep} elements corresponding
-#'  to each of the dependent variables, where each element is an integer
-#'  denoting the degrees of freedom of the Inverse Gamma hyper-prior
-#'  distribution connected to the emission distribution means (note: here, the
-#'  Inverse Gamma hyper-prior distribution is parametrized as a scaled inverse
-#'  chi-squared distribution).}
-#'  \item{\code{emiss_V}: a list containing \code{n_dep} elements corresponding
-#'  to each of the dependent variables \code{k}, where each element is a vector
-#'  with lenght \code{m} containing the hypothesized variances between the
-#'  between subject level means of the Inverse Gamma hyper-prior distribution
-#'  connected to the emission distribution means (note: here, the Inverse Gamma
-#'  hyper-prior distribution is parametrized as a scaled inverse chi-squared
-#'  distribution).}
-#'  \item{\code{emiss_a0}: a list containing \code{n_dep} elements corresponding
-#'  to each of the dependent variables \code{k}, where each element is a vector
-#'  with lenght \code{m} containing the shape values of the Inverse Gamma
-#'  hyper-prior on each of fixed variances of the Normal emission distribuitons
-#'  (note: here the standard Inverse Gamma parametrization is used).}
-#'  \item{\code{emiss_b0}: a list containing \code{n_dep} elements corresponding
-#'  to each of the dependent variables \code{k}, where each element is a vector
-#'  with lenght \code{m} containing the scale values of the Inverse Gamma
-#'  hyper-prior on each of fixed variances of the Normal emission distribuitons
-#'  (note: here the standard Inverse Gamma parametrization is used).}}
-#'  Note that \code{emiss_K0} and \code{emiss_nu} are assumed
-#'  equal over the states.
-#'
-#'
-#'  See \emph{Details} below if covariates are used for changes in the settings
-#'  of the arguments of \code{emiss_hyp_prior}.
-#' @param gamma_sampler An optional list containing user specified settings for
-#'   the proposal distribution of the random walk (RW) Metropolis sampler for
-#'   the subject level parameter estimates of the intercepts modeling the
-#'   transition probability matrix. The list \code{gamma_sampler} contains the
-#'   following elements:
-#'  \itemize{\item{\code{gamma_int_mle0}: a numeric vector with length \code{m}
-#'  - 1 denoting the start values for the maximum likelihood estimates of the
-#'  intercepts for the transition probability matrix gamma, based on the pooled
-#'  data (data over all subjects)}
-#'  \item{\code{gamma_scalar}: a numeric vector with length 1 denoting the scale
-#'  factor \code{s}. That is, The scale of the proposal distribution is composed
-#'  of a covariance matrix Sigma, which is then tuned by multiplying it by a
-#'  scaling factor \code{s}^2}
-#'  \item{\code{gamma_w}: a numeric vector with length 1 denoting the weight for
-#'  the overall log likelihood (i.e., log likelihood based on the pooled data
-#'  over all subjects) in the fractional likelihood.}}
-#'   Default settings are: all elements in \code{gamma_int_mle0} set to 0,
-#'   \code{gamma_scalar} set to 2.93 / sqrt(\code{m} - 1), and \code{gamma_w} set to
-#'   0.1. See the section \emph{Scaling the proposal distribution of the RW
-#'   Metropolis sampler} in \code{vignette("estimation-mhmm")} for details.
-#'
-#' @return \code{mHMM_cont} returns an object of class \code{mHMM_cont}, which has
-#'   \code{print} and \code{summary} methods to see the results.
-#'   The object contains the following components:
-#'   \describe{
-#'   \item{\code{PD_subj}}{A list containing one matrix per subject with the
-#'   subject level parameter estimates and the log likelihood over the
-#'   iterations of the hybrid Metropolis within Gibbs sampler. The iterations of
-#'   the sampler are contained in the rows, and the columns contain the subject
-#'   level estimates of subsequently the emission means, the (fixed over subjects)
-#'   emission variances, the transition probabilities and the log likelihood.}
-#'   \item{\code{gamma_prob_bar}}{A matrix containing the group level parameter
-#'   estimates of the transition probabilities over the iterations of the hybrid
-#'   Metropolis within Gibbs sampler. The iterations of the sampler are
-#'   contained in the rows, and the columns contain the group level parameter
-#'   estimates. If covariates were included in the analysis, the group level
-#'   probabilities represent the predicted probability given that the covariate
-#'   is at the average value for continuous covariates, or given that the
-#'   covariate equals zero for dichotomous covariates.}
-#'   \item{\code{gamma_int_bar}}{A matrix containing the group level intercepts
-#'   of the multinomial logistic regression modeling the transition
-#'   probabilities over the iterations of the hybrid Metropolis within Gibbs
-#'   sampler. The iterations of the sampler are contained in the rows, and the
-#'   columns contain the group level intercepts.}
-#'   \item{\code{gamma_V_int_bar}}{A matrix containing the (co-)variance
-#'   components for the subject-level intercepts
-#'   of the multinomial logistic regression modeling the transition
-#'   probabilities over the iterations of the hybrid Metropolis within Gibbs
-#'   sampler. The iterations of the sampler are contained in the rows, and the
-#'   columns contain the variance components for the subject level intercepts.}
-#'   \item{\code{gamma_cov_bar}}{A matrix containing the group level regression
-#'   coefficients of the multinomial logistic regression predicting the
-#'   transition probabilities over the iterations of the hybrid Metropolis within
-#'   Gibbs sampler. The iterations of the sampler are contained in the rows, and
-#'   the columns contain the group level regression coefficients.}
-#'   \item{\code{gamma_int_subj}}{A list containing one matrix per subject
-#'   denoting the subject level intercepts of the multinomial logistic
-#'   regression modeling the transition probabilities over the iterations of the
-#'   hybrid Metropolis within Gibbs sampler. The iterations of the sampler are
-#'   contained in the rows, and the columns contain the subject level
-#'   intercepts.}
-#'   \item{\code{gamma_naccept}}{A matrix containing the number of accepted
-#'   draws at the subject level RW Metropolis step for each set of parameters of
-#'   the transition probabilities. The subjects are contained in the rows, and
-#'   the columns contain the sets of parameters.}
-#'   \item{\code{emiss_mu_bar}}{A list containing one matrix per dependent
-#'   variable, denoting the group level means of the Normal emission
-#'   distribution of each dependent variable over the iterations of the Gibbs
-#'   sampler. The iterations of the sampler are contained in the rows of the
-#'   matrix, and the columns contain the group level emission means. If
-#'   covariates were included in the analysis, the group level means represent
-#'   the predicted mean given that the covariate is at the average value for
-#'   continuous covariates, or given that the covariate equals zero for
-#'   dichotomous covariates.}
-#'   \item{\code{emiss_varmu_bar}}{A list containing one matrix per dependent
-#'   variable, denoting the variance between the subject level means of the
-#'   Normal emision distributions. over the iterations of the Gibbs sampler. The
-#'   iterations of the sampler are contained in the rows of the matrix, and the
-#'   columns contain the group level variance in the mean.}
-#'   \item{\code{emiss_var_bar}}{A list containing one matrix per dependent
-#'   variable, denoting the (fixed over subjects) variance of the Normal emision
-#'   distributions over the iterations of the Gibbs sampler. The iterations of
-#'   the sampler are contained in the rows of the matrix, and the columns
-#'   contain the group level emission variances.}
-#'   \item{\code{emiss_cov_bar}}{A list containing one matrix per dependent
-#'   variable, denoting the group level regression coefficients predicting the
-#'   emission means within each of the dependent variables over the iterations
-#'   of the Gibbs sampler. The iterations of the sampler are contained in the
-#'   rows  of the matrix, and the columns contain the group level regression
-#'   coefficients.}
-#'   \item{\code{label_switch}}{A matrix of \code{m} rows and \code{n_dep}
-#'   columns containing the percentage of times the group mean of the emission
-#'   distriubion of state \code{i} was sampled to be a smaller value compared to
-#'   the group mean of of the emission distriubion of state \code{i-1}. If the
-#'   state dependent means of the emission distributions were given in a ranked
-#'   order (low to high) to both the start values and hyper-priors, a high
-#'   percentage in \code{label_switch} indicates that label switching possibly
-#'   poses a problem in the analysis, and further diagnostics (e.g.,
-#'   traceplots and posterior distributions) should be inspected.}
-#'   \item{\code{input}}{Overview of used input specifications: the number of
-#'   states \code{m}, the number of used dependent variables \code{n_dep}, the
-#'   number of iterations \code{J} and the specified burn in period
-#'   \code{burn_in} of the hybrid Metropolis within Gibbs sampler, the number of
-#'   subjects \code{n_subj}, the observation length for each subject
-#'   \code{n_vary}, and the column names of the dependent variables
-#'   \code{dep_labels}.}
-#'   \item{\code{sample_path}}{A list containing one matrix per subject with the
-#'   sampled hidden state sequence over the hybrid Metropolis within Gibbs
-#'   sampler. The time points of the dataset are contained in the rows, and the
-#'   sampled paths over the iterations are contained in the columns. Only
-#'   returned if \code{return_path = TRUE}. }
-#' }
-#'
-#' @seealso \code{\link{sim_mHMM}} for simulating multilevel hidden Markov data,
-#'   \code{\link{vit_mHMM}} for obtaining the most likely hidden state sequence
-#'   for each subject using the Viterbi algorithm, \code{\link{obtain_gamma}}
-#'   and \code{\link{obtain_emiss}} for obtaining the transition or emission
-#'   distribution probabilities of a fitted model at the group or subject level,
-#'   and \code{\link{plot.mHMM}} for plotting the posterior densities of a
-#'   fitted model.
-#'
-#' @references
-#' \insertRef{rabiner1989}{mHMMbayes}
-#'
-#' \insertRef{scott2002}{mHMMbayes}
-#'
-#' \insertRef{altman2007}{mHMMbayes}
-#'
-#' \insertRef{rossi2012}{mHMMbayes}
-#'
-#' \insertRef{zucchini2017}{mHMMbayes}
-#'
-#' @examples
-#' ###### Example on simulated data
-#' # simulating multivariate continuous data
-#' n_t     <- 100
-#' n       <- 10
-#' m       <- 3
-#' n_dep   <- 2
-#'
-#' gamma   <- matrix(c(0.8, 0.1, 0.1,
-#'                     0.2, 0.7, 0.1,
-#'                     0.2, 0.2, 0.6), ncol = m, byrow = TRUE)
-#'
-#' emiss_distr <- list(matrix(c( 5, 1,
-#'                               10, 1,
-#'                               15, 1), nrow = m, byrow = TRUE),
-#'                     matrix(c(0.5, 0.1,
-#'                              1.0, 0.2,
-#'                              2.0, 0.1), nrow = m, byrow = TRUE))
-#'
-#' data_cont <- sim_mHMM(n_t = n_t, n = n, m = m, n_dep = n_dep, data_distr = 'continuous',
-#'                   gamma = gamma, emiss_distr = emiss_distr, var_gamma = .1, var_emiss = c(.5, 0.01))
-#'
-#' # Specify hyper-prior for the continuous emission distribution
-#' hyp_pr <- list(
-#'                emiss_mu0 = list(matrix(c(3,7,17), nrow = 1), matrix(c(0.7, 0.8, 1.8), nrow = 1)),
-#'                emiss_K0  = list(1, 1),
-#'                emiss_nu  = list(1, 1),
-#'                emiss_V   = list(rep(2, m), rep(1, m)),
-#'                emiss_a0  = list(rep(1, m), rep(1, m)),
-#'                emiss_b0  = list(rep(1, m), rep(1, m)))
-#'
-#' # Run the model on the simulated data:
-#' out_3st_cont_sim <- medHMM_cont(s_data = data_cont$obs,
-#'                     gen = list(m = m, n_dep = n_dep),
-#'                     start_val = c(list(gamma), emiss_distr),
-#'                     emiss_hyp_prior = hyp_pr,
-#'                     mcmc = list(J = 11, burn_in = 5))
-#'
-#'
-#' @export
-#'
-#'
+###### Example on simulated data
+library(medHMM)
+
+set.seed(42)
+
+# simulating multivariate continuous data
+n_t     <- 500
+n       <- 30
+m       <- 3
+n_dep   <- 2
+
+gamma <- matrix(c(0.9, 0.05, 0.05,
+                  0.1, 0.7, 0.2,
+                  0.25, 0.25, 0.5), ncol = m, byrow = TRUE)
+
+gamma_start <- matrix(c(0.0, 0.5, 0.5,
+                        0.33, 0.0, 0.67,
+                        0.5, 0.5, 0.0), ncol = m, byrow = TRUE)
+
+emiss_distr <- emiss_start <- list(matrix(c( 5, 1,
+                              10, 1,
+                              15, 1), nrow = m, byrow = TRUE),
+                    matrix(c(0.5, 0.1,
+                             1.0, 0.2,
+                             2.0, 0.1), nrow = m, byrow = TRUE))
+
+dwell_distr <- dwell_start <- list(matrix(log(c(6, 1.5,
+                                            3, 1.5,
+                                            1, 1.5)), nrow = m, ncol = 2, byrow = TRUE))
+
+data_cont <- mHMMbayes::sim_mHMM(n_t = n_t, n = n, m = m, n_dep = n_dep, data_distr = 'continuous',
+                  gamma = gamma, emiss_distr = emiss_distr, var_gamma = .1, var_emiss = c(.5, 0.01), return_ind_par = TRUE)
+
+sim_obs <- data_cont$obs
+
+# Specify hyper-prior for the continuous emission distribution
+emiss_hyp_pr <- list(
+               emiss_mu0 = list(matrix(c(3,7,17), nrow = 1), matrix(c(0.7, 0.8, 1.8), nrow = 1)),
+               emiss_K0  = list(1, 1),
+               emiss_nu  = list(1, 1),
+               emiss_V   = list(rep(10, m), rep(10, m)),
+               emiss_a0  = list(rep(0.01, m), rep(0.01, m)),
+               emiss_b0  = list(rep(0.01, m), rep(0.01, m))
+               )
+
+# Specify hyper-prior for the dwelling time (log-normal) distribution
+dwell_hyp_pr <- list(
+    d_mu0			= log(c(10,5,2)),
+    s2_0			= log(rep(10, m)),
+    alpha.sigma20	= rep(0.01, m),
+    beta.sigma20	= rep(0.01, m),
+    alpha.tau20		= rep(0.01, m),
+    beta.tau20		= rep(0.01, m)
+)
+
+# # Run the model on the simulated data:
+# out <- medHMM_cont(s_data = data_cont$obs,
+#                    gen = list(m = m, n_dep = n_dep),
+#                    start_val = c(list(gamma_start), emiss_start, dwell_start),
+#                    emiss_hyp_prior = emiss_hyp_pr,
+#                    dwell_hyp_prior = dwell_hyp_pr,
+#                    show_progress = TRUE,
+#                    mcmc = list(J = 11, burn_in = 5))
+
+# Test package
+s_data = data_cont$obs
+gen = list(m = m, n_dep = n_dep)
+start_val = c(list(gamma_start), emiss_start, dwell_start)
+emiss_hyp_prior = emiss_hyp_pr
+dwell_hyp_prior = dwell_hyp_pr
+show_progress = TRUE
+mcmc = list(J = 500, burn_in = 250)
+gamma_hyp_prior = NULL
+show_progress = TRUE
+xx = NULL
+gamma_sampler = NULL
+return_path = TRUE
+
+
+
+
+
+library(Rcpp)
+cppFunction('List mult_ed_fb_cpp(int m, int n, NumericVector delta, NumericMatrix allprobs, int Mx, IntegerVector Mx2,NumericMatrix gamma, NumericMatrix d, IntegerVector S, IntegerVector S2) {
+     int j, t, i, u, uMax, v, k, Len;
+
+     int zer = 0;
+     NumericMatrix d2 = clone(d);
+
+     double x;
+     NumericMatrix D2(m,n);
+     NumericVector dSum(m);
+
+     NumericVector N(n);
+     NumericMatrix Norm(m,n);
+     NumericMatrix Forward(m,n);
+     NumericMatrix StateIn(m,n);
+     double Observ = 0;
+
+     NumericMatrix Backward(m, n);
+     NumericMatrix B_star(m, n+2);
+     IntegerVector VarL(Mx-1);
+     for (i = 1; i < Mx; i++) {
+         VarL(i-1) = Mx - i;
+     }
+     int occNcol = Mx * (n-Mx+1) + sum(VarL);
+     NumericMatrix Occupancy(m, occNcol);
+
+     IntegerVector lengthID(n);
+     for (i = 0; i < n; i++) {
+         if (i < n-Mx+1) {
+             lengthID(i) = Mx;
+         }
+         else {
+             lengthID(i) = VarL(i - (n-Mx+1));
+         }
+     }
+
+     IntegerVector endID(n + 2);
+     for (i = 0; i < n+2; i++) {
+         if (i == 0) {
+             endID(i) = 0;
+         }
+         if (i > 0) {
+             if (i < n+1) {
+                 endID(i) =  endID(i-1) + lengthID(i-1);
+             }
+         }
+         if (i == n+1) {
+             endID(i) = endID(i-1);
+         }
+     }
+
+     IntegerVector::const_iterator first = S.begin() + 0;
+
+     // forward recursion
+     for (t = 0; t <= n-1; t++) {
+
+         uMax = std::min(t+1, Mx+1);
+
+         IntegerVector::const_iterator last = S.begin() + (t+1);
+         IntegerVector SSh(first, last);
+         Len = SSh.size();
+         IntegerVector SShrev(Len);
+         for (i = 0; i < Len; i++) {
+             SShrev(i) = SSh(Len-1-i);
+         }
+
+         IntegerVector::const_iterator first2 = SShrev.begin() + 0;
+         IntegerVector::const_iterator last2 = SShrev.begin() + (uMax);
+         IntegerVector SShrev2(first2, last2);
+
+         d2 = clone(d);
+         for (i = 1; i < uMax; i++) {
+             for (j = 0; j < m; j++) {
+                 d2(j,i) *= SShrev2(i-1);
+             }
+         }
+
+         for (j = 0; j < m; j++) {
+             dSum(j) = 0;
+             for (i = 0; i <= Mx; i++) {
+                 dSum(j) += d2(j,i);
+             }
+         }
+
+         for (j = 0; j < m; j++) {
+             if (dSum(j) != 0) {
+                 for (i = 0; i <= Mx; i++) {
+                     d2(j,i) /= dSum(j);
+                 }
+             }
+         }
+
+         if (t == n-1) {
+             for (j = 0; j < m; j++) {
+                 for (u = 1; u <= Mx; u++) {
+                     x = 0;
+                     for (v = u; v < Mx + 1; v++)
+                         x += d2(j,v);
+                     D2(j,(u-1)) = x;
+                 }
+                 for (u = Mx + 1; u <= n; u++) {
+                     D2(j,(u-1)) = 0;
+                 }
+             }
+         }
+
+         N(t) = 0;
+         for (j = 0; j < m; j++) {
+             if (t == 0) {
+                 Norm(j,0) = log(delta(j)) + log(allprobs(j,0));
+             }
+             else
+             {
+                 Norm(j,t) = log(allprobs(j,t)) + log(std::abs(exp(StateIn(j,t)) - exp(Forward(j, (t-1))) + exp(Norm(j, (t-1)))));
+             }
+             N(t) += exp(Norm(j,t));
+         }
+         N(t) = log(N(t));
+         for (j = 0; j < m; j++) {
+             Norm(j,t) -= N(t);
+         }
+
+         for (j = 0; j < m; j++) {
+             Forward(j,t) = 0;
+             Observ = 0;
+
+             if (t < n-1) {
+                 for (u = 1; u <= std::min(t+1, Mx2(j)); u++) {
+                     Observ += log(allprobs(j,t-u+1)) - N(t-u+1);
+                     if (SShrev2(u-1) == 1) {
+                         if (u < t + 1) {
+                             Forward(j,t) += exp(Observ + log(d2(j,u)) + StateIn(j, (t-u+1)));
+                         }
+                         else {
+                             Forward(j,t) += exp(Observ + log(d2(j,t+1)) + log(delta(j)));
+                         }
+                     }
+                 }
+                 Forward(j,t) = log(Forward(j,t));
+             }
+             else {
+                 for (u = 1; u <= std::min(n, Mx2(j)); u++) {
+                     Observ += log(allprobs(j,t-u+1)) - N(t-u+1);
+                     if (SShrev2(u-1) == 1) {
+                         if (u < n) {
+                             Forward(j,n-1) += exp(Observ + log(D2(j,u)) + StateIn(j, n-u));
+                         }
+                         else {
+                             Forward(j,n-1) += exp(Observ + log(D2(j,n)) + log(delta(j)));
+                         }
+                     }
+                 }
+                 Forward(j,n-1) = log(Forward(j,n-1));
+             }
+         }
+         if (t < n-1){
+             for (j = 0; j < m; j++){
+                 StateIn(j, t+1) = 0;
+                 for (i = 0; i < m; i++){
+                     StateIn(j, t+1) += exp(Forward(i,t) + log(gamma(i,j)));
+                 }
+                 StateIn(j,t+1) = log(StateIn(j, t+1));
+             }
+         }
+
+     }
+
+     // Backward recursion
+
+     for (t = n-1; t >= 0; t--) {
+         if (S(t) == 1) {
+
+             uMax = std::min(n-t, Mx);
+             IntegerVector::const_iterator first3 = S2.begin() + t;
+             IntegerVector::const_iterator last3 = S2.begin() + (n);
+             IntegerVector SShB(first3, last3);
+
+             IntegerVector::const_iterator first4 = SShB.begin() + 0;
+             IntegerVector::const_iterator last4 = SShB.begin() + (uMax);
+             IntegerVector SShB2(first4, last4);
+
+             d2 = clone(d);
+             for (i = 1; i < uMax+1; i++) {
+                 for (j = 0; j < m; j++) {
+                     d2(j,i) *= SShB2(i-1);
+                 }
+             }
+
+             for (j = 0; j < m; j++) {
+                 dSum(j) = 0;
+                 for (i = 0; i <= Mx; i++) {
+                     dSum(j) += d2(j,i);
+                 }
+             }
+
+             for (j = 0; j < m; j++) {
+                 if (dSum(j) != 0) {
+                     for (i = 0; i <= Mx; i++) {
+                         d2(j,i) /= dSum(j);
+                     }
+                 }
+             }
+
+             for (j = 0; j < m; j++) {
+                 for (u = 1; u <= Mx; u++) {
+                     x = 0;
+                     for (v = u; v < Mx + 1; v++)
+                         x += d2(j,v);
+                     D2(j,(u-1)) = x;
+                 }
+                 for (u = Mx + 1; u <= n; u++) {
+                     D2(j,(u-1)) = 0;
+                 }
+             }
+
+             for (j = 0; j < m; j++) {
+                 B_star(j,t) = 0;
+                 Observ = 0;
+                 for (u = 1; u <= std::min(n - t, Mx2(j)); u++) {
+                     Observ += log(allprobs(j,t+u-1)) - N(t+u-1);
+                     if (SShB2(u-1) == 1) {
+                         if (u < n-t) {
+                             Occupancy(j, endID(t) + (u-1)) = exp(Backward(j,t+u) + Observ + log(d2(j,u)));
+                         }
+                         else {
+                             Occupancy(j, endID(t) + (u-1)) = exp(Observ + log(D2(j,n-1-t)));
+                         }
+                         B_star(j,t) += Occupancy(j, endID(t) + (u-1));
+                     }
+                 }
+                 B_star(j,t) = log(B_star(j,t));
+             }
+             for (j = 0; j < m; j++) {
+                 Backward(j,t) = 0;
+                 for (k = 0; k < m; k++) {
+                     Backward(j,t) += exp(B_star(k,t) + log(gamma(j,k)));
+                 }
+                 Backward(j,t) = log(Backward(j,t));
+             }
+         }
+     }
+
+     List H(n);
+     for (i = 0; i < n; i++) {
+         if (S(i) == 0) {
+             H(i) = zer;
+         }
+         else {
+             NumericMatrix foo(m,lengthID(i));
+             for (k = 0; k < lengthID(i); k++) {
+                 foo(_,k) = Occupancy(_, k + endID(i));
+             }
+             H(i) = foo;
+         }
+     }
+
+     return List::create(N, B_star, H);
+ }')
+
+
+
+
 
 medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwell_hyp_prior,
                         mcmc, return_path = FALSE, print_iter, show_progress = TRUE,
@@ -975,3 +956,273 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
     class(out) <- append(class(out), "medHMM_cont")
     return(out)
 }
+
+
+
+#
+out_mhmm <- mHMMbayes::mHMM_cont(s_data = data_cont$obs,
+                                 gen = list(m = m, n_dep = n_dep),
+                                 start_val = c(list(gamma), emiss_start),
+                                 emiss_hyp_prior = emiss_hyp_pr,
+                                 show_progress = TRUE,
+                                 mcmc = list(J = 200, burn_in = 100))
+
+
+# out_medhmm <- out
+
+out <- out_mhmm
+
+out$gamma_prob_bar
+out$gamma_naccept/500
+out$dwell_mu_bar
+out$dwell_var_bar
+
+out$gamma_V_int_bar
+
+library(tidyverse)
+
+out$gamma_prob_bar %>%
+    as.data.frame() %>%
+    mutate(iter = row_number()) %>%
+    gather(parameter, value, -iter) %>%
+    ggplot(aes(iter, value)) +
+    geom_line() +
+    facet_wrap(parameter~.)
+
+out$emiss_mu_bar[[1]]  %>%
+    as.data.frame() %>%
+    mutate(iter = row_number()) %>%
+    gather(parameter, value, -iter) %>%
+    ggplot(aes(iter, value)) +
+    geom_line() +
+    facet_wrap(parameter~.)
+
+out$emiss_mu_bar[[2]]  %>%
+    as.data.frame() %>%
+    mutate(iter = row_number()) %>%
+    gather(parameter, value, -iter) %>%
+    ggplot(aes(iter, value)) +
+    geom_line() +
+    facet_wrap(parameter~.)
+
+subj_data <- do.call(rbind, lapply(1:length(out$PD_subj), function(s) out$PD_subj[[s]] %>%
+                                       as.data.frame() %>%
+                                       mutate(subj = s,
+                                              iter = row_number())))
+
+subj_data %>%
+    mutate(subj = factor(subj)) %>%
+    gather(parameter, value, -iter, -subj) %>%
+    filter(str_detect(parameter, "_mu_S")) %>%
+    ggplot(aes(iter, value, colour = subj)) +
+    geom_line() +
+    facet_wrap(parameter~.)
+
+
+
+
+cbind(exp(t(B_star)), apply(exp(t(B_star)), 1, which.max), data_cont$states[data_cont$states[,1] == 1, 2])
+
+# out_medhmm$PD_subj[[1]]
+# out_medhmm$gamma_int_bar # add names
+# out_medhmm$gamma_int_subj # add names
+out_medhmm$gamma_V_int_bar # add names
+out_medhmm$dwell_mu_bar
+# out_medhmm$dwell_var_bar
+
+matrix(paste0())
+
+temp <- matrix(paste0("int_S", rep(1:m, each = m), "toS", rep(1:m, m)), nrow = m, byrow = TRUE)
+diag(temp) <- NA
+colnames(gamma_int_bar) <- as.vector(t(matrix(t(temp)[!is.na(as.vector(t(temp)))], nrow = m, byrow = TRUE)[,-1]))
+
+
+int_names <- paste0("int_S", rep(1:m, each = m), "toS", rep(1:m, m))[!(paste0("int_S", rep(1:m, each = m), "toS", rep(1:m, m)) %in% as.vector(t(matrix(t(temp)[!is.na(as.vector(t(temp)))], nrow = m, byrow = TRUE)[,-1])))]
+var_names <- paste0("var_int_S", rep(1:m, each = (m-1)*(m-1)), "toS", rep(2:m, each=m-1), "_with_", "int_S", rep(1:m, each = (m-1)*(m-1)), "toS", rep(2:m, m))
+var_names[!grepl(paste(int_names, collapse = "|"), var_names)]
+
+
+
+
+
+
+# Check FB:
+d 	<- get.d.lognorm(run.p = list(logmu = log(c(10, 3.33, 2)), logsd = sqrt(logsigma2)), Mx = subj_data[[s]]$Mx, m = m)
+
+d 	<- get.d.lognorm(run.p = list(logmu = logmu[s,], logsd = sqrt(logsigma2)), Mx = subj_data[[s]]$Mx, m = m)
+
+delta[[s]] <- get_delta(gamma1, m)
+
+allprobs <- get_all1(x = subj_data[[1]]$y, emiss = data_cont$subject_emiss[[1]], n_dep = n_dep, data_distr = "continuous")
+
+FB	<- mult_ed_fb_cpp(
+    # y2 = subj_data[[s]]$y,
+    m = m,
+    n = subj_data[[s]]$n,
+    allprobs = t(allprobs),
+    Mx = subj_data[[s]]$Mx,
+    Mx2 = subj_data[[s]]$Mx2,
+    gamma = gamma1,
+    d = d,
+    S2 = subj_data[[s]]$switch2,
+    S = subj_data[[s]]$switch,
+    delta = delta[[s]]
+)
+
+
+Occupancy
+
+cbind(exp(t(B_star)[1:500,]), apply(exp(t(B_star)[1:500,]), 1, which.max), data_cont$states[data_cont$states[,1] == 1, 2])
+
+
+data_cont$subject_emiss[[1]]
+
+
+temp_gamma <- data_cont$subject_gamma[[1]]
+diag(temp_gamma) <- 0
+gamma1 <- t(apply(matrix(as.numeric(t(temp_gamma)), nrow = m, byrow = TRUE),1, function(r) r/sum(r)))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Define model parameters:
+n_t <- 500
+n <- 20
+m <- 3
+n_dep <- 2
+# n_dep <- 1
+
+
+gamma <- matrix(c(0, 0.7, 0.3,
+                  0.5, 0, 0.5,
+                  0.6, 0.4, 0), nrow = m, ncol = m, byrow = TRUE)
+
+emiss_distr <- list(matrix(c(10,2,
+                             50,2,
+                             2,2), nrow = m, ncol = 2, byrow = TRUE),
+                    matrix(c(-5,2,
+                             -20,2,
+                             5,2), nrow = m, ncol = 2, byrow = TRUE))
+
+durat_type <- "logNormal"
+durat_distr <- matrix(c(20,2,
+                        10,2,
+                        2,2), nrow = m, ncol = 2, byrow = TRUE)
+durat_start <- matrix(log(c(20,2,
+                        10,2,
+                        2,2)), nrow = m, ncol = 2, byrow = TRUE)
+
+# Simulate data
+sim_data <- sim_medHSMM(n_t, n, data_distr = 'continuous', m, n_dep = n_dep,
+                      durat_distr = durat_distr, durat_type = 'logNormal', hsmm_type = "explicit_duration", simple_bound = TRUE,
+                      start_state = NULL, q_emiss = NULL, gamma = gamma, emiss_distr = emiss_distr, xx_vec = NULL, beta = NULL,
+                      var_gamma = 0.1, var_emiss = c(1,1), var_durat = 0.1, return_ind_par = TRUE)
+                      # var_gamma = 0, var_emiss = 0, var_durat = 0, return_ind_par = TRUE)
+
+
+sim_data$subject_durat
+
+
+
+
+# Specify hyper-prior for the continuous emission distribution
+emiss_hyp_pr <- list(
+    emiss_mu0 = list(matrix(c(10,50,2), nrow = 1),
+                     matrix(c(-5, -20, 5), nrow = 1)),
+    emiss_K0  = list(1, 1),
+    emiss_nu  = list(1, 1),
+    emiss_V   = list(rep(100, m), rep(100, m)),
+    emiss_a0  = list(rep(0.01, m), rep(0.01, m)),
+    emiss_b0  = list(rep(0.01, m), rep(0.01, m))
+)
+
+# Specify hyper-prior for the dwelling time (log-normal) distribution
+dwell_hyp_pr <- list(
+    d_mu0			= log(c(20,10,2)),
+    s2_0			= log(rep(100, m)),
+    alpha.sigma20	= rep(0.01, m),
+    beta.sigma20	= rep(0.01, m),
+    alpha.tau20		= rep(0.01, m),
+    beta.tau20		= rep(0.01, m)
+)
+
+dwell_hyp_pr <- list(
+    d_mu0			= log(c(20,10,2)),
+    s2_0			= rep(100, m),
+    alpha.sigma20	= rep(0.01, m),
+    beta.sigma20	= rep(0.01, m),
+    alpha.tau20		= rep(0.01, m),
+    beta.tau20		= rep(0.01, m)
+)
+
+
+
+# Run the model on the simulated data:
+out <- medHMM_cont(s_data = sim_data$obs,
+                   gen = list(m = m, n_dep = n_dep),
+                   start_val = c(list(gamma), emiss_distr, list(durat_start)),
+                   emiss_hyp_prior = emiss_hyp_pr,
+                   dwell_hyp_prior = dwell_hyp_pr,
+                   show_progress = TRUE,
+                   mcmc = list(J = 500, burn_in = 250), return_path = TRUE)
+
+
+out$gamma_prob_bar
+out$gamma_naccept/500
+out$dwell_mu_bar
+out$dwell_var_bar
+
+out$gamma_V_int_bar
+
+library(tidyverse)
+
+out$gamma_prob_bar %>%
+    as.data.frame() %>%
+    mutate(iter = row_number()) %>%
+    gather(parameter, value, -iter) %>%
+    ggplot(aes(iter, value)) +
+    geom_line() +
+    facet_wrap(parameter~.)
+
+out$emiss_mu_bar[[1]]  %>%
+    as.data.frame() %>%
+    mutate(iter = row_number()) %>%
+    gather(parameter, value, -iter) %>%
+    ggplot(aes(iter, value)) +
+    geom_line() +
+    facet_wrap(parameter~.)
+
+out$emiss_mu_bar[[2]]  %>%
+    as.data.frame() %>%
+    mutate(iter = row_number()) %>%
+    gather(parameter, value, -iter) %>%
+    ggplot(aes(iter, value)) +
+    geom_line() +
+    facet_wrap(parameter~.)
+
+subj_data <- do.call(rbind, lapply(1:length(out$PD_subj), function(s) out$PD_subj[[s]] %>%
+                                       as.data.frame() %>%
+                                       mutate(subj = s,
+                                              iter = row_number())))
+
+subj_data %>%
+    mutate(subj = factor(subj)) %>%
+    gather(parameter, value, -iter, -subj) %>%
+    filter(str_detect(parameter, "_mu_S")) %>%
+    ggplot(aes(iter, value, colour = subj)) +
+    geom_line() +
+    facet_wrap(parameter~.)
+

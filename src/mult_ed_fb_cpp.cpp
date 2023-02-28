@@ -4,7 +4,7 @@ using namespace Rcpp;
 // This is a c++ version of the the forward part of the explicit duration forward backward algorithm
 // for a categorical emission distribution
 //' @keywords internal
- // [[Rcpp::export(rng = false)]]
+// [[Rcpp::export(rng = false)]]
 
  List mult_ed_fb_cpp(int m, int n, NumericVector delta, NumericMatrix allprobs, int Mx, IntegerVector Mx2,NumericMatrix gamma, NumericMatrix d, IntegerVector S, IntegerVector S2) {
      int j, t, i, u, uMax, v, k, Len;

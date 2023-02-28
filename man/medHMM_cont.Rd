@@ -11,6 +11,7 @@ medHMM_cont(
   xx = NULL,
   start_val,
   emiss_hyp_prior,
+  dwell_hyp_prior,
   mcmc,
   return_path = FALSE,
   print_iter,
