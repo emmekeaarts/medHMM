@@ -299,14 +299,14 @@ continuous covariates, or given that the covariate equals zero for
 dichotomous covariates.}
 \item{\code{emiss_varmu_bar}}{A list containing one matrix per dependent
 variable, denoting the variance between the subject level means of the
-Normal emision distributions. over the iterations of the Gibbs sampler. The
+Normal emision distributions over the iterations of the Gibbs sampler. The
 iterations of the sampler are contained in the rows of the matrix, and the
 columns contain the group level variance in the mean.}
 \item{\code{emiss_var_bar}}{A list containing one matrix per dependent
-variable, denoting the (fixed over subjects) variance of the Normal emision
-distributions over the iterations of the Gibbs sampler. The iterations of
-the sampler are contained in the rows of the matrix, and the columns
-contain the group level emission variances.}
+variable, denoting the (fixed over subjects) variance of the Normal
+emission distributions over the iterations of the Gibbs sampler. The
+iterations of the sampler are contained in the rows of the matrix, and the
+columns contain the group level emission variances.}
 \item{\code{emiss_cov_bar}}{A list containing one matrix per dependent
 variable, denoting the group level regression coefficients predicting the
 emission means within each of the dependent variables over the iterations
@@ -318,10 +318,16 @@ log-Normal dwell distribution over the iterations of the Gibbs
 sampler. The iterations of the sampler are contained in the rows of the
 matrix, and the columns contain the group level dwell log-means. Note that
 the log-means are returned in the logarithmic scale.}
+\item{\code{dwell_varmu_bar}}{A matrix denoting the variance between the
+subject level log-means of the log-Normal dwell distribution over the
+iterations of the Gibbs sampler. The iterations of the sampler are
+contained in the rows of the matrix, and the columns contain the group
+level variance of the dwell mean.}
 \item{\code{dwell_var_bar}}{A matrix denoting the (fixed over subjects)
-variance of the log-Normal dwell distribution over the iterations of the
-Gibbs sampler. The iterations of the sampler are contained in the rows of
-the matrix, and the columns contain the group level dwell variances.}
+variance of the log-Normal dwell distribution over the
+iterations of the Gibbs sampler. The iterations of the sampler are
+contained in the rows of the matrix, and the columns contain the group
+level variance of the subject level dwell distribution.}
 \item{\code{input}}{Overview of used input specifications: the number of
 states \code{m}, the number of used dependent variables \code{n_dep}, the
 number of iterations \code{J} and the specified burn in period
@@ -450,6 +456,7 @@ out <- medHMM_cont(s_data = sim_data$obs,
 #   - Improve function structure and output for 2 states
 #   - Make sure function works for covariates
 #   - Improve stability of function implementing control checks
+#   - Make model more memory efficient (rm unnecessary objects)
 
 }
 \references{

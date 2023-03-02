@@ -309,14 +309,14 @@
 #'   dichotomous covariates.}
 #'   \item{\code{emiss_varmu_bar}}{A list containing one matrix per dependent
 #'   variable, denoting the variance between the subject level means of the
-#'   Normal emision distributions. over the iterations of the Gibbs sampler. The
+#'   Normal emision distributions over the iterations of the Gibbs sampler. The
 #'   iterations of the sampler are contained in the rows of the matrix, and the
 #'   columns contain the group level variance in the mean.}
 #'   \item{\code{emiss_var_bar}}{A list containing one matrix per dependent
-#'   variable, denoting the (fixed over subjects) variance of the Normal emision
-#'   distributions over the iterations of the Gibbs sampler. The iterations of
-#'   the sampler are contained in the rows of the matrix, and the columns
-#'   contain the group level emission variances.}
+#'   variable, denoting the (fixed over subjects) variance of the Normal
+#'   emission distributions over the iterations of the Gibbs sampler. The
+#'   iterations of the sampler are contained in the rows of the matrix, and the
+#'   columns contain the group level emission variances.}
 #'   \item{\code{emiss_cov_bar}}{A list containing one matrix per dependent
 #'   variable, denoting the group level regression coefficients predicting the
 #'   emission means within each of the dependent variables over the iterations
@@ -328,10 +328,16 @@
 #'   sampler. The iterations of the sampler are contained in the rows of the
 #'   matrix, and the columns contain the group level dwell log-means. Note that
 #'   the log-means are returned in the logarithmic scale.}
+#'   \item{\code{dwell_varmu_bar}}{A matrix denoting the variance between the
+#'   subject level log-means of the log-Normal dwell distribution over the
+#'   iterations of the Gibbs sampler. The iterations of the sampler are
+#'   contained in the rows of the matrix, and the columns contain the group
+#'   level variance of the dwell mean.}
 #'   \item{\code{dwell_var_bar}}{A matrix denoting the (fixed over subjects)
-#'   variance of the log-Normal dwell distribution over the iterations of the
-#'   Gibbs sampler. The iterations of the sampler are contained in the rows of
-#'   the matrix, and the columns contain the group level dwell variances.}
+#'   variance of the log-Normal dwell distribution over the
+#'   iterations of the Gibbs sampler. The iterations of the sampler are
+#'   contained in the rows of the matrix, and the columns contain the group
+#'   level variance of the subject level dwell distribution.}
 #'   \item{\code{input}}{Overview of used input specifications: the number of
 #'   states \code{m}, the number of used dependent variables \code{n_dep}, the
 #'   number of iterations \code{J} and the specified burn in period
@@ -431,6 +437,7 @@
 #' #   - Improve function structure and output for 2 states
 #' #   - Make sure function works for covariates
 #' #   - Improve stability of function implementing control checks
+#' #   - Make model more memory efficient (rm unnecessary objects)
 #'
 #' @export
 
@@ -716,9 +723,12 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
     colnames(dwell_mu_bar) <- paste("mu_d_bar", 1:m, sep = "")
     dwell_mu_bar[1,] <- matrix(PD[1, ((n_dep * m * 2 + m * m + 1)) :((n_dep * m * 2 + m * m + m))], nrow = 1, ncol = m, byrow = TRUE)
 
-    dwell_var_bar <- matrix(NA_real_, nrow = J, ncol = m)
-    colnames(dwell_var_bar) <- paste("tau2_d_bar", 1:m, sep = "")
-    dwell_var_bar[1,] <- matrix(PD[1, ((n_dep * m * 2 + m * m + 1)) :((n_dep * m * 2 + m * m + m))], nrow = 1, ncol = m, byrow = TRUE)
+    dwell_varmu_bar <- dwell_var_bar <- matrix(NA_real_, nrow = J, ncol = m)
+    colnames(dwell_varmu_bar) <- paste("tau2_d_bar", 1:m, sep = "")
+    colnames(dwell_var_bar) <- paste("logsigma2", 1:m, sep = "")
+
+    dwell_var_bar[1,] <- dwell_varmu_bar[1,] <- matrix(PD[1, ((n_dep * m * 2 + m * m + 1)) :((n_dep * m * 2 + m * m + m))], nrow = 1, ncol = m, byrow = TRUE)
+
 
     # Define object for subject specific posterior density (regression coefficients parameterization )
     gamma_int_subj			<- rep(list(gamma_int_bar), n_subj)
@@ -1189,7 +1199,8 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
         # dwell time parameters
         # duration_bar[iter,] <- c(mu_d_bar, logsigma2, tau2_d_bar)
         dwell_mu_bar[iter, ] <- mu_d_bar # IMPROVE memory use
-        dwell_var_bar[iter, ] <- tau2_d_bar
+        dwell_varmu_bar[iter, ] <- tau2_d_bar
+        dwell_var_bar[iter, ] <- logsigma2
 
         if(show_progress == TRUE){
             utils::setTxtProgressBar(pb, iter)
@@ -1214,7 +1225,8 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
                     gamma_naccept = gamma_naccept,
                     emiss_mu_bar = emiss_mu_bar, emiss_varmu_bar = emiss_varmu_bar, emiss_cov_bar = emiss_cov_bar,
                     emiss_var_bar = emiss_var_bar,
-                    dwell_mu_bar = dwell_mu_bar, dwell_var_bar = dwell_var_bar,
+                    dwell_mu_bar = dwell_mu_bar, dwell_varmu_bar = dwell_varmu_bar,
+                    dwell_var_bar = dwell_var_bar,
                     sample_path = sample_path)
     } else {
         out <- list(input = list(m = m, n_dep = n_dep, J = J,
@@ -1228,7 +1240,8 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
                     gamma_naccept = gamma_naccept,
                     emiss_mu_bar = emiss_mu_bar, emiss_varmu_bar = emiss_varmu_bar, emiss_cov_bar = emiss_cov_bar,
                     emiss_var_bar = emiss_var_bar,
-                    dwell_mu_bar = dwell_mu_bar, dwell_var_bar = dwell_var_bar)
+                    dwell_mu_bar = dwell_mu_bar, dwell_varmu_bar = dwell_varmu_bar,
+                    dwell_var_bar = dwell_var_bar)
     }
     class(out) <- append(class(out), "medHMM_cont")
     return(out)
