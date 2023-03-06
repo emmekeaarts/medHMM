@@ -727,7 +727,7 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
     colnames(dwell_varmu_bar) <- paste("tau2_d_bar", 1:m, sep = "")
     colnames(dwell_var_bar) <- paste("logsigma2", 1:m, sep = "")
 
-    dwell_var_bar[1,] <- dwell_varmu_bar[1,] <- matrix(PD[1, ((n_dep * m * 2 + m * m + 1)) :((n_dep * m * 2 + m * m + m))], nrow = 1, ncol = m, byrow = TRUE)
+    dwell_var_bar[1,] <- dwell_varmu_bar[1,] <- matrix(PD[1, ((n_dep * m * 2 + m * m + m + 1)) :((n_dep * m * 2 + m * m + m + m))], nrow = 1, ncol = m, byrow = TRUE)
 
 
     # Define object for subject specific posterior density (regression coefficients parameterization )
