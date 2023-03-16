@@ -774,7 +774,7 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
                 # Idea: pre-compute emissions likelihood to pass to FBalgC() here:
 
                 # Run forward backward algorithm in C++, using the runlength distribution d for each state ================================================================
-                d 	<- get.d.lognorm(run.p = list(logmu = logmu[s,], logsd = sqrt(logsigma2)), Mx = subj_data[[s]]$Mx, m = m)
+                d 	<- get.d.lognorm(run.p = list(logmu = logmu[s,], logsd = log(sqrt(exp(logsigma2)))), Mx = subj_data[[s]]$Mx, m = m)
 
                 delta[[s]] <- get_delta(gamma[[s]], m)
 
@@ -948,7 +948,7 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
                 # Idea: pre-compute emissions likelihood to pass to FBalgC() here:
 
                 # Run forward backward algorithm in C++, using the runlength distribution d for each state ================================================================
-                d 	<- get.d.lognorm(run.p = list(logmu = logmu[s,], logsd = sqrt(logsigma2)), Mx = subj_data[[s]]$Mx, m = m)
+                d 	<- get.d.lognorm(run.p = list(logmu = logmu[s,], logsd =log(sqrt(exp(logsigma2)))), Mx = subj_data[[s]]$Mx, m = m)
 
                 delta[[s]] <- get_delta(gamma[[s]], m)
 
