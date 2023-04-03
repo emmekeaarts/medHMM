@@ -470,7 +470,7 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
         switched 			<- rep(0, n)
         switched[1] 		<- 1
         for (t in 2:n) {
-            if(any(subj_data[[s]]$y[t] != subj_data[[s]]$y[t-1])) {
+            if(any(subj_data[[s]]$y[t,] != subj_data[[s]]$y[t-1,])) {
                 switched[t] <- 1}
         }
         switched2 		<- c(switched[-1],1)
