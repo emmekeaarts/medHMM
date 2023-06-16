@@ -441,7 +441,7 @@
 #'
 #' @export
 
-medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwell_hyp_prior,
+medHMM_cont_lognorm <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwell_hyp_prior,
                         mcmc, return_path = FALSE, show_progress = TRUE,
                         gamma_hyp_prior = NULL, gamma_sampler = NULL, max_dwell = NULL
 ){
@@ -1105,7 +1105,7 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
                 }
                 # Sample subject values for normal emission distribution using Gibbs sampler   ---------
 
-                # population level, conditional probabilities, separate for each dependent variable
+                # population level, conditional probabilities, seperate for each dependent variable
                 for(q in 1:n_dep){
                     for (s in 1:n_subj){
                         ss_subj[s] <- t(matrix(cond_y[[s]][[i]][[q]] - emiss_c_mu[[i]][[q]][s,1], nrow = 1) %*%
@@ -1130,7 +1130,7 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
 
 
                 #################
-                # Obtain hierarchical and mouse specific parameters for duration distribution using Gibbs sampler ====================================
+                # Obtain hierarchical and mouse specific parameters for duration distribuiton using gibbs sampler ====================================
                 #################
 
                 #draw logmu's

@@ -1,7 +1,7 @@
 #' Multilevel explicit duration hidden Markov model using Bayesian estimation
-#' for continuous observations
+#' for continuous observations and a Poisson-lognormal state dwell time
 #'
-#' \code{medHMM_cont} fits a multilevel (also known as mixed or random effects)
+#' \code{medHMM_cont_pois} fits a multilevel (also known as mixed or random effects)
 #' explicit duration
 #' hidden (semi-) Markov model (HMM) to intense longitudinal data with continuous
 #' observations (i.e., normally distributed) of multiple subjects using Bayesian
@@ -63,15 +63,17 @@
 #'   \item{\code{n_dep}: numeric vector with length 1 denoting the
 #'   number of dependent variables}}
 #' @param xx An optional list of (level 2) covariates to predict the transition
-#'   matrix and/or the emission probabilities. Level 2 covariate(s) means that
-#'   there is one observation per subject of each covariate. The first element
-#'   in the list \code{xx} is used to predict the transition matrix. Subsequent
-#'   elements in the list are used to predict the emission distribution of (each
-#'   of) the dependent variable(s). Each element in the list is a matrix, with
-#'   the number of rows equal to the number of subjects. The first column of
-#'   each matrix represents the intercept, that is, a column only consisting of
-#'   ones. Subsequent columns correspond to covariates used to predict the
-#'   transition matrix / emission distribution. See \emph{Details} for more
+#'   matrix and/or the emission probabilities and/or state dwell times. Level 2
+#'   covariate(s) means that there is one observation per subject of each
+#'   covariate. The first element in the list \code{xx} is used to predict the
+#'   transition matrix. Subsequent \code{n_dep} elements in the list are used
+#'   to predict the emission distribution of (each of) the dependent
+#'   variable(s). The final element is used to predict the state dwell times.
+#'   Each element in the list is a matrix, with the number of rows equal to the
+#'   number of subjects. The first column of each matrix represents
+#'   the intercept, that is, a column only consisting of ones. Subsequent
+#'   columns correspond to covariates used to predict the transition matrix /
+#'   emission / dwell distribution. See \emph{Details} for more
 #'   information on the use of covariates.
 #'
 #'   If \code{xx} is omitted completely, \code{xx} defaults to \code{NULL},
@@ -88,9 +90,10 @@
 #'   and 2 columns; the first column denoting the mean of state \emph{i} (row
 #'   \emph{i}) and the second column denoting the variance of state \emph{i}
 #'   (row \emph{i}) of the Normal distribution. The last element contains a
-#'   matrix of \code{m} rows and 2 columns with the start values for the dwell time
-#'   distribution. Note that \code{start_val} should not contain nested lists
-#'   (i.e., lists within lists).
+#'   matrix of \code{m} rows and 1 column with the start values for the dwell
+#'   time distribution in the natural (i.e., not logarithmic) scale. Notice
+#'   that \code{start_val} should not contain nested lists (i.e., lists within
+#'   lists).
 #' @param mcmc List of Markov chain Monte Carlo (MCMC) arguments, containing the
 #'   following elements:
 #'   \itemize{\item{\code{J}: numeric vector with length 1 denoting the number
@@ -143,6 +146,7 @@
 #'
 #'  See \emph{Details} below if covariates are used for changes in the settings
 #'  of the arguments of \code{gamma_hyp_prior}.
+#'
 #' @param emiss_hyp_prior A list containing user specified parameters
 #'   of the hyper-prior distribution on the Normal (i.e., Gaussian) emission
 #'   distributions (and regression coefficients given that covariates are used)
@@ -187,46 +191,42 @@
 #'  (note: here the standard Inverse Gamma parametrization is used).}}
 #'  Note that \code{emiss_K0} and \code{emiss_nu} are assumed
 #'  equal over the states.
+#'
 #' @param dwell_hyp_prior A list containing user specified parameters
-#'   of the hyper-prior distribution on the log-Normal (i.e., log-Gaussian)
-#'   dwell time distribution for each of the states. The hyper-prior connected
-#'   to the log-means of the log-Normal state dwell time distribution(s) is a
-#'   Normal-Inverse-Gamma distribution (i.e., assuming both unknown population
-#'   mean and variance between subject level means). The hyper-prior on each of
-#'   fixed variances of the Normal emission distributions is an Inverse gamma
-#'   distribution (i.e., assuming a known mean). Note that the values used as
-#'   log-mean priors are to be entered in the logarithmic scale.
+#'  of the hyper-prior distribution on the Poisson emission
+#'  distributions (and regression coefficients given that covariates are used)
+#'  for each of the states. The hyper-prior connected to the means of the
+#'  Poisson emission distribution(s) is a hierarchical Poisson-lognormal
+#'  distribution. The hyper-priors on the means (\code{dwell_mu_bar}) and
+#'  variance (\code{dwell_V_bar}) of the lognormal prior
+#'  are defined by hyper-priors with hyper-parameters
+#'  \code{dwell_mu0}, \code{dwell_K0}, \code{dwell_nu} and
+#'  \code{dwell_V}, respectively.
 #'
 #'  Hence, the list \code{dwell_hyp_prior} contains the following elements:
-#'  \itemize{\item{\code{d_mu0}: a vector of \code{m} elements denoting the
-#'  hypothesized mean values of the log-Normal dwell distribution for each of
-#'  the states in the logarithmic scale}.
-#'  \item{\code{s2_0}: a vector with lenght \code{m} containing the
-#'  hypothesized variances between the between subject level means of the
-#'  Inverse Gamma hyper-prior distribution connected to the dwell distribution
-#'  log-means (note: here, the Inverse Gamma hyper-prior distribution is
-#'  parametrized as a scaled inverse chi-squared distribution).}
-#'  \item{\code{alpha.sigma20}: a vector with lenght \code{m} containing the
-#'  shape values of the Inverse Gamma hyper-prior on each of fixed variances of
-#'  the log-Normal dwell distribution (note: here the standard Inverse Gamma
-#'  parametrization is used).}
-#'  \item{\code{beta.sigma20}: a vector with lenght \code{m} containing the
-#'  scale values of the Inverse Gamma hyper-prior on each of fixed variances of
-#'  the log-Normal dwell distribution (note: here the standard Inverse Gamma
-#'  parametrization is used).}
-#'  \item{\code{alpha.tau20}: a vector with lenght \code{m} containing the
-#'  shape values of the Inverse Gamma hyper-prior on each of the between subject
-#'  variances of the Normal prior on the dwell distribution (note: here the
-#'  standard Inverse Gamma parametrization is used).}
-#'  \item{\code{beta.tau20}: a vector with lenght \code{m} containing the
-#'  scale values of the Inverse Gamma hyper-prior on each of the between subject
-#'  variances of the Normal prior on the dwell distribution (note: here the
-#'  standard Inverse Gamma parametrization is used).}}
-#'  Note that \code{emiss_K0} and \code{emiss_nu} are assumed
+#'  \itemize{\item{\code{dwell_mu0}: a vector
+#'  with length \code{m} containing the mean values of the lognormal
+#'  hyper-prior on each of the logmeans of the Poisson dwell distribution
+#'  (note: here the standard Gamma parameterization is used, with parameters
+#'  shape and rate). Notice that the logmeans are to be specified in the
+#'  logarithmic scale (see example below).}
+#'  \item{\code{dwell_K0}: numeric vector with length 1 denoting the number of
+#'  hypothetical prior subjects on which the vector of means \code{dwell_mu0} is
+#'  based}
+#'  \item{\code{dwell_nu}: numeric vector with length 1 denoting the degrees of
+#'  freedom of the Inverse Gamma hyper-prior
+#'  distribution connected to the emission distribution means (note: here, the
+#'  Inverse Gamma hyper-prior distribution is parameterized as a scaled inverse
+#'  chi-squared distribution)}
+#'  \item{\code{dwell_V}: a vector
+#'  with length \code{m} containing the hypothesized variances between the
+#'  between subject level means of the Inverse Gamma hyper-prior distribution
+#'  connected to the dwell distribution means (note: here, the Inverse Gamma
+#'  hyper-prior distribution is parametrized as a scaled inverse chi-squared
+#'  distribution).}}
+#'  Note that \code{dwell_K0} and \code{dwell_nu} are assumed
 #'  equal over the states.
 #'
-#'  See \emph{Details} below if covariates are used for changes in the settings
-#'  of the arguments of \code{emiss_hyp_prior}.
 #' @param gamma_sampler An optional list containing user specified settings for
 #'   the proposal distribution of the random walk (RW) Metropolis sampler for
 #'   the subject level parameter estimates of the intercepts modeling the
@@ -247,13 +247,36 @@
 #'   \code{gamma_scalar} set to 2.93 / sqrt(\code{m} - 1), and \code{gamma_w} set to
 #'   0.1. See the section \emph{Scaling the proposal distribution of the RW
 #'   Metropolis sampler} in \code{vignette("estimation-mhmm")} for details.
+#'
+#' @param dwell_sampler An optional list containing user specified settings for
+#'   the proposal distribution of the random walk (RW) Metropolis sampler for
+#'   the subject level parameter estimates of the Poisson means modeling the
+#'   state duration distribution. The list \code{dwell_sampler} contains the
+#'   following elements:
+#'  \itemize{\item{\code{dwell_mle0}: a numeric vector with length \code{m}
+#'  - 1 denoting the start values for the maximum likelihood estimates of the
+#'  intercepts for the transition probability matrix gamma, based on the pooled
+#'  data (data over all subjects)}
+#'  \item{\code{dwell_scalar}: a numeric vector with length 1 denoting the scale
+#'  factor \code{s}. That is, The scale of the proposal distribution is composed
+#'  of a covariance matrix Sigma, which is then tuned by multiplying it by a
+#'  scaling factor \code{s}^2}
+#'  \item{\code{dwell_w}: a numeric vector with length 1 denoting the weight for
+#'  the overall log likelihood (i.e., log likelihood based on the pooled data
+#'  over all subjects) in the fractional likelihood.}}
+#'
+#'   Default settings are: all elements in \code{dwell_mle0} set to 0,
+#'   \code{dwell_scalar} set to 2.38, and \code{dwell_w} set to
+#'   0.1. See the section \emph{Scaling the proposal distribution of the RW
+#'   Metropolis sampler} in \code{vignette("estimation-mhmm")} for details.
+#'
 #' @param max_dwell An optional value for the maximal dwell time in discrete
 #'   time steps allowed for the states. Lower values in \code{max_dwell} improve
 #'   the speed of the algorithm at the risk of underestimating the duration of
 #'   states. When omitted, it defaults to the number of occasions on each
 #'   subject (that os, all possible durations are assessed).
 #'
-#' @return \code{mHMM_cont} returns an object of class \code{mHMM_cont}, which has
+#' @return \code{medHMM_cont_pois} returns an object of class \code{medHMM_cont_pois}, which has
 #'   \code{print} and \code{summary} methods to see the results.
 #'   The object contains the following components:
 #'   \describe{
@@ -333,11 +356,15 @@
 #'   iterations of the Gibbs sampler. The iterations of the sampler are
 #'   contained in the rows of the matrix, and the columns contain the group
 #'   level variance of the dwell mean.}
-#'   \item{\code{dwell_var_bar}}{A matrix denoting the (fixed over subjects)
-#'   variance of the log-Normal dwell distribution over the
-#'   iterations of the Gibbs sampler. The iterations of the sampler are
-#'   contained in the rows of the matrix, and the columns contain the group
-#'   level variance of the subject level dwell distribution.}
+#'   \item{\code{dwell_naccept}}{A matrix containing the number of accepted
+#'   draws at the subject level RW Metropolis step for each set of parameters of
+#'   the Poisson dwell distribution. The subjects are contained in the rows, and
+#'   the columns contain the sets of parameters.}
+#'   \item{\code{dwell_cov_bar}}{A matrix denoting the group level regression
+#'   coefficients predicting the subjects dwell means over the iterations
+#'   of the Gibbs sampler. The iterations of the sampler are contained in the
+#'   rows  of the matrix, and the columns contain the group level regression
+#'   coefficients.}
 #'   \item{\code{input}}{Overview of used input specifications: the number of
 #'   states \code{m}, the number of used dependent variables \code{n_dep}, the
 #'   number of iterations \code{J} and the specified burn in period
@@ -372,10 +399,9 @@
 #'
 #' @examples
 #' ###### Example on simulated data
-#' # simulating multivariate continuous data
-#'
-#' # 3 states
-#' n_t <- 500
+#' # Simulating multivariate continuous data with a Poisson-lognormal dwell distribution
+#' # Define model parameters:
+#' n_t <- 200
 #' n <- 20
 #' m <- 3
 #' n_dep <- 2
@@ -392,15 +418,17 @@
 #'                              -20,2,
 #'                              5,2), nrow = m, ncol = 2, byrow = TRUE))
 #'
-#' dwell_distr <- dwell_start <- matrix(log(c(50,2,
-#'                                            10,2,
-#'                                            2,2)), nrow = m, ncol = 2, byrow = TRUE)
+#' dwell_distr <- dwell_start <- matrix(log(c(10,
+#'                                            2,
+#'                                            50)), nrow = m, ncol = 1, byrow = TRUE)
 #'
-#' # Simulate data
+#' # Simulating multivariate continuous data with a poisson dwell distribution
+#' # Define model parameters:
+#' set.seed(42)
 #' sim_data <- sim_medHMM(n_t, n, data_distr = 'continuous', m, n_dep = n_dep,
-#'                        dwell_distr = dwell_distr, dwell_type = 'logNormal',
-#'                        start_state = NULL, q_emiss = NULL, gamma = gamma, emiss_distr = emiss_distr, xx_vec = NULL, beta = NULL,
-#'                        var_gamma = 0.1, var_emiss = c(0.1,0.1), var_dwell = 0.01, return_ind_par = TRUE)
+#'                                                 dwell_distr = dwell_distr, dwell_type = 'poisson',
+#'                                                 start_state = NULL, q_emiss = NULL, gamma = gamma, emiss_distr = emiss_distr, xx_vec = NULL, beta = NULL,
+#'                                                 var_gamma = 0.1, var_emiss = c(0.1,0.1), var_dwell = 0.1, return_ind_par = TRUE)
 #'
 #' # Specify hyper-prior for the continuous emission distribution
 #' emiss_hyp_pr <- list(
@@ -408,30 +436,29 @@
 #'                      matrix(c(-5, -20, 5), nrow = 1)),
 #'     emiss_K0  = list(1, 1),
 #'     emiss_nu  = list(1, 1),
-#'     emiss_V   = list(rep(100, m), rep(100, m)),
+#'     emiss_V   = list(rep(10, m), rep(10, m)),
 #'     emiss_a0  = list(rep(0.01, m), rep(0.01, m)),
 #'     emiss_b0  = list(rep(0.01, m), rep(0.01, m))
 #' )
 #'
-#' # Specify hyper-prior for the dwelling time (log-normal) distribution
+#' ## Define dwell hyper-priors
 #' dwell_hyp_pr <- list(
-#'     d_mu0			= log(c(20,10,2)),
-#'     s2_0			= log(rep(100, m)),
-#'     alpha.sigma20	= rep(0.01, m),
-#'     beta.sigma20	= rep(0.01, m),
-#'     alpha.tau20		= rep(0.01, m),
-#'     beta.tau20		= rep(0.01, m)
+#'     dwell_mu0 = matrix(log(c(10,
+#'                               2,
+#'                              50)), nrow = 1, ncol = 3), # nrow = number of covariates + 1; ncol = number of hidden states
+#'     dwell_K0  = c(1),
+#'     dwell_nu  = c(1),
+#'     dwell_V   = rep(0.1, m)
 #' )
 #'
-#'
-#' # Run the model on the simulated data:
-#' out <- medHMM_cont(s_data = sim_data$obs,
-#'                    gen = list(m = m, n_dep = n_dep),
-#'                    start_val = c(list(gamma), emiss_distr, list(dwell_start)),
-#'                    emiss_hyp_prior = emiss_hyp_pr,
-#'                    dwell_hyp_prior = dwell_hyp_pr,
-#'                    show_progress = TRUE,
-#'                    mcmc = list(J = 200, burn_in = 100), return_path = TRUE, max_dwell = 120)
+#' # Train the medHMM:
+#' out_pois <- medHMM_cont_pois(s_data = sim_data$obs,
+#'                              gen = list(m = m, n_dep = n_dep),
+#'                              start_val = c(list(gamma), emiss_distr, list(exp(dwell_distr))), # Notice exp()
+#'                              emiss_hyp_prior = emiss_hyp_pr,
+#'                              dwell_hyp_prior = dwell_hyp_pr_plnorm,
+#'                              show_progress = TRUE,
+#'                              mcmc = list(J = 200, burn_in = 100), return_path = TRUE, max_dwell = 200)
 #'
 #' # To do:
 #' #   - Improve function structure and output for 2 states
@@ -441,9 +468,11 @@
 #'
 #' @export
 
-medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwell_hyp_prior,
-                        mcmc, return_path = FALSE, show_progress = TRUE,
-                        gamma_hyp_prior = NULL, gamma_sampler = NULL, max_dwell = NULL
+medHMM_cont_pois <- function(s_data, gen, xx = NULL, start_val,
+                             # dwell_family = "poisson",
+                             emiss_hyp_prior, dwell_hyp_prior,
+                             mcmc, return_path = FALSE, show_progress = TRUE,
+                             gamma_hyp_prior = NULL, gamma_sampler = NULL, dwell_sampler = NULL, max_dwell = NULL
 ){
 
     # Initialize data -----------------------------------
@@ -462,6 +491,9 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
     ypooled    <- n <- NULL
     n_vary     <- numeric(n_subj)
     m          <- gen$m
+    # dwell_mle       <- list(NULL)
+    # dwell_mhess     <- list(NULL)
+    # dwell_converge  <- list(NULL)
 
     for(s in 1:n_subj){
         ypooled   <- rbind(ypooled, subj_data[[s]]$y)
@@ -490,22 +522,27 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
             list(Mx = max_dwell_n),
             list(Mx2 = rep(max_dwell_n, m)),
             list(switch = switched),
-            list(switch2 = switched2)
+            list(switch2 = switched2),
+            list(dwell_converge = numeric(m),
+                 dwell_mle = numeric(m),
+                 dwell_mhess = numeric(m))
         )
     }
     n_total 		<- dim(ypooled)[1]
 
     # Intialize covariates
-    n_dep1 <- 1 + n_dep
-    nx <- numeric(n_dep1)
+    # n_dep1 <- 1 + n_dep
+    n_dep2 <- 2 + n_dep
+    # nx <- numeric(n_dep1)
+    nx <- numeric(n_dep2)
     if (is.null(xx)){
-        xx <- rep(list(matrix(1, ncol = 1, nrow = n_subj)), n_dep1)
+        xx <- rep(list(matrix(1, ncol = 1, nrow = n_subj)), n_dep2)
         nx[] <- 1
     } else {
-        if(!is.list(xx) | length(xx) != n_dep1){
-            stop("If xx is specified, xx should be a list, with the number of elements equal to the number of dependent variables + 1")
+        if(!is.list(xx) | length(xx) != n_dep2){
+            stop("If xx is specified, xx should be a list, with the number of elements equal to the number of dependent variables + 2")
         }
-        for(i in 1:n_dep1){
+        for(i in 1:n_dep2){
             if (is.null(xx[[i]])){
                 xx[[i]] <- matrix(1, ncol = 1, nrow = n_subj)
                 nx[i] <- 1
@@ -548,6 +585,17 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
         gamma_w         <- gamma_sampler$gamma_w
     }
 
+    # Initialize dwell sampler
+    if(is.null(dwell_sampler)) {
+        dwell_mle0      <- 0
+        dwell_scalar    <- 2.38
+        dwell_w         <- .1
+    } else {
+        dwell_mle0      <- dwell_sampler$emiss_mle0
+        dwell_scalar    <- dwell_sampler$emiss_scalar
+        dwell_w         <- dwell_sampler$emiss_w
+    }
+
 
 
     # Initialize Gamma hyper prior
@@ -582,22 +630,41 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
     for(q in 1:n_dep){
         # emiss_hyp_prior[[q]]$emiss_mu0 has to contain a list with lenght equal to m, and each list contains matrix with number of rows equal to number of covariates for that dep. var.
         # stil build in a CHECK, with warning / stop / switch to default prior
-        emiss_mu0[[q]]	 <- emiss_hyp_prior$emiss_mu0[[q]]
-        emiss_nu[[q]]	 <- emiss_hyp_prior$emiss_nu[[q]]
-        emiss_V[[q]]		 <- emiss_hyp_prior$emiss_V[[q]]
-        emiss_K0[[q]]	 <- diag(emiss_hyp_prior$emiss_K0, nx[1 + q])
+        emiss_mu0[[q]]	<- emiss_hyp_prior$emiss_mu0[[q]]
+        emiss_nu[[q]]	<- emiss_hyp_prior$emiss_nu[[q]]
+        emiss_V[[q]]	<- emiss_hyp_prior$emiss_V[[q]]
+        emiss_K0[[q]]	<- diag(emiss_hyp_prior$emiss_K0, nx[1 + q])
         emiss_a0[[q]] <- emiss_hyp_prior$emiss_a0[[q]]
         emiss_b0[[q]] <- emiss_hyp_prior$emiss_b0[[q]]
     }
 
 
     # Initialize dwell hyper prior =====================================================================================================
-    d_mu0			<- dwell_hyp_prior$d_mu0
-    s2_0			<- dwell_hyp_prior$s2_0
-    alpha.sigma20	<- dwell_hyp_prior$alpha.sigma20
-    beta.sigma20	<- dwell_hyp_prior$beta.sigma20
-    alpha.tau20		<- dwell_hyp_prior$alpha.tau20
-    beta.tau20		<- dwell_hyp_prior$beta.tau20
+    # d_mu0			<- dwell_hyp_prior$d_mu0
+    # s2_0			<- dwell_hyp_prior$s2_0
+    # alpha.sigma20	<- dwell_hyp_prior$alpha.sigma20
+    # beta.sigma20	<- dwell_hyp_prior$beta.sigma20
+    # alpha.tau20		<- dwell_hyp_prior$alpha.tau20
+    # beta.tau20		<- dwell_hyp_prior$beta.tau20
+
+    # Initialize emiss hyper prior
+    if(missing(dwell_hyp_prior)){
+        stop("The hyper-prior values for the Poisson-lognormal state dwell distribution denoted by dwell_hyp_prior needs to be specified")
+    }
+
+    # emiss_mu0: for each dependent variable, emiss_mu0 is a list, with one element for each state.
+    # Each element is a matrix, with number of rows equal to the number of covariates (with the intercept being one cov),
+    # and the number of columns equal to q_emiss[q] - 1.
+    # dwell_mu0	<- list(vector("list", m))
+    # dwell_V	    <- list(vector("list", m))
+    # dwell_nu	<- list(NULL)
+    # dwell_K0    <- list(NULL)
+    # emiss_hyp_prior[[q]]$emiss_mu0 has to contain a list with lenght equal to m, and each list contains matrix with number of rows equal to number of covariates for that dep. var.
+    # stil build in a CHECK, with warning / stop / switch to default prior
+    dwell_mu0	<- dwell_hyp_prior$dwell_mu0
+    dwell_nu	<- dwell_hyp_prior$dwell_nu
+    dwell_V	    <- dwell_hyp_prior$dwell_V
+    dwell_K0	<- diag(dwell_hyp_prior$dwell_K0, nx[2 + n_dep])
 
 
 
@@ -616,7 +683,6 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
 
     # emiss
     cond_y <- lapply(rep(n_dep, n_subj), nested_list, m = m)
-    cond_y_pooled <- rep(list(rep(list(NULL),n_dep)), m)
     emiss_c_mu <- rep(list(rep(list(matrix(NA_real_,ncol = 1, nrow = n_subj)),n_dep)), m)
     for(i in 1:m){
         for(q in 1:n_dep){
@@ -625,14 +691,21 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
     }
     emiss_V_mu <- emiss_c_mu_bar <- emiss_c_V <- rep(list(rep(list(NULL),n_dep)), m)
     ss_subj <- n_cond_y <- numeric(n_subj)
-    label_switch <- matrix(0, ncol = n_dep, nrow = m, dimnames = list(c(paste("mu_S", 1:m, sep = "")), dep_labels))
+    # label_switch <- matrix(0, ncol = n_dep, nrow = m, dimnames = list(c(paste("mu_S", 1:m, sep = "")), dep_labels))
 
     # dwell ============================================================================================================================= Added dwell pars
     d <- B_star <- Occupancy <- N <- numeric()
     Dur <- vector("list", n_subj)
-    # sample.path <- Dur <- vector("list", n.mice)
     n.Dur <- numeric(n_subj)
-    tau2 <- logmu2 <- a1 <- b1 <- double(m)
+    dwell_c_mu <- rep(list(matrix(NA_real_,ncol = 1, nrow = n_subj)), m)
+    for(i in 1:m){
+        for(q in 1:n_dep){
+            dwell_c_mu[[i]][,1] <- start_val[[2 + n_dep]][i,1]
+        }
+    }
+    dwell_V_mu <- dwell_c_mu_bar <- dwell_c_V <- rep(list(NULL), m)
+    dwell_mle_pooled <- dwell_pooled_ll <- rep(list(NULL), m)
+    dwell_naccept <- matrix(0, n_subj, m)
 
 
     # Define objects that are returned from mcmc algorithm ----------------------------
@@ -641,12 +714,12 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
         stop("The number of elements in the list start_val should be equal to 2 + the number of dependent variables,
          and should not contain nested lists (i.e., lists within lists)")
     }
-    PD 					  <- matrix(NA_real_, nrow = J, ncol = n_dep * m * 2 + m * m + m + m + 1) # ===================================================== Addedd dwell time pars and positions
+    PD 					  <- matrix(NA_real_, nrow = J, ncol = n_dep * m * 2 + m * m + m + 1) # ===================================================== Added dwell time pars and positions
     colnames(PD) 	<- c(paste("dep", rep(1:n_dep, each = m), "_mu", "_S", rep(1:m), sep = ""),
                        paste("dep", rep(1:n_dep, each = m), "_fixvar", "_S", rep(1:m), sep = ""),
                        paste("S", rep(1:m, each = m), "toS", rep(1:m, m), sep = ""),
-                       paste("dur_logmu", 1:m, sep = ""),
-                       paste("dur_logsigma2", 1:m, sep = ""),
+                       paste("dur_lambda", 1:m, sep = ""),
+                       # paste("dur_logsigma2", 1:m, sep = ""),
                        # paste("dur_tau2_bar", 1:m, sep = ""),
                        "LL")
 
@@ -655,8 +728,8 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
         PD[1, ((q-1) * m + 1):(q * m)] <- start_val[[q + 1]][,1]
         PD[1, (n_dep * m + (q-1) * m + 1):(n_dep * m + q * m)] <- start_val[[q + 1]][,2]
     }
-    PD[1, ((n_dep * m * 2 + m * m + 1)) :((n_dep * m * 2 + m * m + m))] <- start_val[[1 + n_dep + 1]][,1]
-    PD[1, ((n_dep * m * 2 + m * m + m + 1)) :((n_dep * m * 2 + m * m + m + m))] <- start_val[[1 + n_dep + 1]][,2]
+    PD[1, ((n_dep * m * 2 + m * m + 1)) :((n_dep * m * 2 + m * m + m))] <- start_val[[1 + n_dep + 1]][,1] # Check if log or exp
+    # PD[1, ((n_dep * m * 2 + m * m + m + 1)) :((n_dep * m * 2 + m * m + m + m))] <- start_val[[1 + n_dep + 1]][,2]
     # PD[1, ((n_dep * m * 2 + m * m + 1)) :((n_dep * m * 2 + m * m + m))] <- unlist(sapply(start_val, t))[(n_dep*m*2+m*m+1):(n_dep*m*2+m*m+m*2)]
 
     PD_subj				<- rep(list(PD), n_subj)
@@ -689,7 +762,6 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
 
     if(nx[1] > 1){
         gamma_cov_bar				<- matrix(NA_real_, nrow = J, ncol = ((m-2) * m) * (nx[1] - 1))
-        # colnames(gamma_cov_bar) <- paste( paste("cov", rep(1 : (nx[1] - 1),each = (m-1)), "_", sep = ""), "S", rep(1:m, each = (m-1) * (nx[1] - 1)), "toS", rep(2:m, m * (nx[1] - 1)), sep = "") # CHECK NAMES
         gamma_cov_bar[1,] <- 0
     } else{
         gamma_cov_bar <- "No covariates where used to predict the transition probability matrix"
@@ -701,8 +773,8 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
     for(q in 1:n_dep){
         emiss_var_bar[[q]][1,] <- PD[1, (n_dep * m + (q-1) * m + 1):(n_dep * m + q * m)]
     }
-    if(sum(nx[-1]) > n_dep){
-        emiss_cov_bar			<- lapply(m * (nx[-1] - 1 ), dif_matrix, rows = J)
+    if(sum(nx[2:(length(nx)-1)]) > n_dep){
+        emiss_cov_bar			<- lapply(m * (nx[2:(length(nx)-1)] - 1 ), dif_matrix, rows = J)
         names(emiss_cov_bar) <- dep_labels
         for(q in 1:n_dep){
             if(nx[1 + q] > 1){
@@ -721,14 +793,29 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
     # colnames(duration_bar)	<- c(paste("mu_d_bar", 1:m, sep = ""), paste("logsigma2", 1:m, sep = ""), paste("tau2_d_bar", 1:m, sep = ""))
     dwell_mu_bar <- matrix(NA_real_, nrow = J, ncol = m)
     colnames(dwell_mu_bar) <- paste("mu_d_bar", 1:m, sep = "")
-    dwell_mu_bar[1,] <- matrix(PD[1, ((n_dep * m * 2 + m * m + 1)) :((n_dep * m * 2 + m * m + m))], nrow = 1, ncol = m, byrow = TRUE)
+    dwell_mu_bar[1,] <- matrix(log(PD[1, ((n_dep * m * 2 + m * m + 1)) :((n_dep * m * 2 + m * m + m))]), nrow = 1, ncol = m, byrow = TRUE)
+    # dwell_mu_bar[1,] <- matrix(PD[1, ((n_dep * m * 2 + m * m + 1)) :((n_dep * m * 2 + m * m + m))], nrow = 1, ncol = m, byrow = TRUE)
 
-    dwell_varmu_bar <- dwell_var_bar <- matrix(NA_real_, nrow = J, ncol = m)
-    colnames(dwell_varmu_bar) <- paste("tau2_d_bar", 1:m, sep = "")
-    colnames(dwell_var_bar) <- paste("logsigma2", 1:m, sep = "")
+    dwell_varmu_bar <- matrix(NA_real_, nrow = J, ncol = m)
+    # dwell_var_bar <- matrix(NA_real_, nrow = J, ncol = m)
+    colnames(dwell_varmu_bar) <- paste("tau2_d_bar", 1:m, sep = "") # Check name
+    # colnames(dwell_var_bar) <- paste("logsigma2", 1:m, sep = "")
+    # dwell_var_bar[1,] <- dwell_varmu_bar[1,] <- matrix(PD[1, ((n_dep * m * 2 + m * m + m + 1)) :((n_dep * m * 2 + m * m + m + m))], nrow = 1, ncol = m, byrow = TRUE)
 
-    dwell_var_bar[1,] <- dwell_varmu_bar[1,] <- matrix(PD[1, ((n_dep * m * 2 + m * m + m + 1)) :((n_dep * m * 2 + m * m + m + m))], nrow = 1, ncol = m, byrow = TRUE)
+    if(sum(nx[length(nx)]) > 1){
+        dwell_cov_bar			<- lapply(m * (nx[length(nx)]), dif_matrix, rows = J)
+        names(dwell_cov_bar) <- dep_labels
 
+        if(nx[1 + q] > 1){
+            colnames(dwell_cov_bar) <-  paste( paste("cov", 1 : (nx[length(nx)]), "_", sep = ""), "mu_S", rep(1:m, each = (nx[length(nx)])), sep = "")
+            dwell_cov_bar[1,] <- 0
+        } else {
+            dwell_cov_bar <- "No covariates where used to predict the emission probabilities for this outcome"
+        }
+
+    } else{
+        dwell_cov_bar <- "No covariates where used to predict the emission probabilities"
+    }
 
     # Define object for subject specific posterior density (regression coefficients parameterization )
     gamma_int_subj			<- rep(list(gamma_int_bar), n_subj)
@@ -739,16 +826,16 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
         emiss_sep[[q]][,1] <- PD[1, ((q-1) * m + 1):(q * m)]
         emiss_sep[[q]][,2] <- PD[1, (n_dep * m + (q-1) * m + 1):(n_dep * m + q * m)]
     }
-    emiss				<- rep(list(emiss_sep), n_subj)
-    gamma 			<- rep(list(matrix(PD[1,(m * 2 * n_dep + 1):(m * 2 * n_dep + m * m)], byrow = TRUE, ncol = m)), n_subj)
-    delta 			<- rep(list(solve(t(diag(m) - gamma[[1]] + 1), rep(1, m))), n_subj)
+    emiss	<- rep(list(emiss_sep), n_subj)
+    gamma 	<- rep(list(matrix(PD[1,(m * 2 * n_dep + 1):(m * 2 * n_dep + m * m)], byrow = TRUE, ncol = m)), n_subj)
+    delta 	<- rep(list(solve(t(diag(m) - gamma[[1]] + 1), rep(1, m))), n_subj)
+    dwell   <- rep(list(matrix(start_val[[n_dep + 2]][,1], nrow = m, ncol = 1)), n_subj)
+    # dwell   <- rep(list(matrix(exp(start_val[[n_dep + 2]][,1]), nrow = m, ncol = 1)), n_subj)
 
-    # dwell ============================================================================================================================= Added dwell starting values
-    mu_d_bar        <- matrix(PD[1, ((n_dep * m * 2 + m * m + 1)) :((n_dep * m * 2 + m * m + m))], nrow = 1, ncol = m, byrow = TRUE)
-    logmu           <- matrix(PD[1, ((n_dep * m * 2 + m * m + 1)) :((n_dep * m * 2 + m * m + m))], nrow = n_subj, ncol = m, byrow = TRUE)
-    logsigma2		<- tau2_d_bar <- PD[1, ((n_dep * m * 2 + m * m + m + 1)) :((n_dep * m * 2 + m * m + m + m))]
-    # logmu		  	<- mu_d_bar <- matrix(Start_Val[((m*q_pr + m*m) + 1) : ((m*q_pr + m*m) + m)], n.mice, m, byrow = TRUE)
-    # logsigma2		<- tau2_d_bar <- Start_Val[((m*q_pr + m*m) + m + 1) : ((m*q_pr + m*m) + m*2)]
+    # # dwell ============================================================================================================================= Added dwell starting values
+    # mu_d_bar        <- matrix(PD[1, ((n_dep * m * 2 + m * m + 1)) :((n_dep * m * 2 + m * m + m))], nrow = 1, ncol = m, byrow = TRUE)
+    # logmu           <- matrix(PD[1, ((n_dep * m * 2 + m * m + 1)) :((n_dep * m * 2 + m * m + m))], nrow = n_subj, ncol = m, byrow = TRUE)
+    # logsigma2		<- tau2_d_bar <- PD[1, ((n_dep * m * 2 + m * m + m + 1)) :((n_dep * m * 2 + m * m + m + m))]
 
 
     # Start analysis --------------------------------------------
@@ -766,177 +853,177 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
 
         if (m == 2){
 
-            # For each subject, obtain sampled state sequence with subject individual parameters ----------
-            sample_path_state <- Dur <- vector("list", n_subj)
-
-            for(s in 1:n_subj){
-
-                # Idea: pre-compute emissions likelihood to pass to FBalgC() here:
-
-                # Run forward backward algorithm in C++, using the runlength distribution d for each state ================================================================
-                d 	<- get.d.lognorm(run.p = list(logmu = logmu[s,], logsd = sqrt(logsigma2)), Mx = subj_data[[s]]$Mx, m = m)
-
-                delta[[s]] <- get_delta(gamma[[s]], m)
-
-                allprobs <- get_all1(x = subj_data[[s]]$y, emiss = emiss[[s]], n_dep = n_dep, data_distr = "continuous")
-
-                FB	<- mult_ed_fb_cpp(
-                    # y2 = subj_data[[s]]$y,
-                    m = m,
-                    n = subj_data[[s]]$n,
-                    allprobs = t(allprobs),
-                    Mx = subj_data[[s]]$Mx,
-                    Mx2 = subj_data[[s]]$Mx2,
-                    gamma = gamma[[s]],
-                    d = d,
-                    S2 = subj_data[[s]]$switch2,
-                    S = subj_data[[s]]$switch,
-                    delta = delta[[s]]
-                )
-
-                B_star				<- FB[[2]]
-                Occupancy			<- FB[[3]]
-                N 					<- FB[[1]]
-                PD_subj[[s]][iter-1, m*n_dep*2 + m*m + m*2 + 1] <- llk <- sum(N)	# adjust index; we may need to do log-sum-ex
-
-                # Using the outcomes of the forward backward algorithm, sample the state sequence ==========================================================================
-                trans[[s]]				                <- vector("list", m)
-                sample_path_state[[s]][1] 	            <- sample(1:m, 1, prob = delta[[s]] * exp(B_star[,1]))
-                Dur[[s]][1] 			                <- sample(1:subj_data[[s]]$Mx, 1, prob = (Occupancy[[1]][sample_path_state[[s]][1],] / exp(B_star[sample_path_state[[s]][1],1])))
-                sample_path[[s]][1:Dur[[s]][1], iter]   <- sample_path_state[[s]][1]
-
-                t <- 1
-                while(sum(Dur[[s]]) < subj_data[[s]]$n){
-                    t 						                                        <- t + 1
-                    Mx.l 					                                        <- min(subj_data[[s]]$Mx, subj_data[[s]]$n-sum(Dur[[s]]))
-                    sample_path_state[[s]][t] 	                                    <- sample(1:m, 1, prob = gamma[[s]][sample_path_state[[s]][t-1],] * exp(B_star[,sum(Dur[[s]])+1]))
-                    trans[[s]][[sample_path_state[[s]][t-1]]]                       <- c(trans[[s]][[sample_path_state[[s]][t-1]]], sample_path_state[[s]][t])
-                    Dur[[s]][t]			                                            <- sample(1:Mx.l, 1, prob = (Occupancy[[sum(Dur[[s]])+1]][sample_path_state[[s]][t],] / exp(B_star[sample_path_state[[s]][t], sum(Dur[[s]])+1])))
-                    sample_path[[s]][sum(Dur[[s]][1:t-1],1):sum(Dur[[s]]), iter]    <- sample_path_state[[s]][t]
-                }
-
-                n.Dur[s] <- length(Dur[[s]])
-                for (i in 1:m){
-                    # trans[[s]][[i]]         <- c(trans[[s]][[i]], 1:m) # to avoid errors, check if we can drop
-                    for (q in 1:n_dep) {
-                        # cond_y[[s]][[i]]    <- subj_data[[s]]$y[sample_path[[s]][, iter] == i, q]
-                        if(iter == 2){
-                            cond_y[[s]][[i]][[q]] <- c(subj_data[[s]]$y[sample_path[[s]][, iter] == i, q][!is.na(subj_data[[s]]$y[sample_path[[s]][, iter] == i, q])],emiss_mu0[[q]][1,i])
-                        } else {
-                            cond_y[[s]][[i]][[q]] <- c(subj_data[[s]]$y[sample_path[[s]][, iter] == i, q][!is.na(subj_data[[s]]$y[sample_path[[s]][, iter] == i, q])],emiss_c_mu_bar[[i]][[q]][1])
-                        }
-                    }
-
-                }
-            }
-
+            # # For each subject, obtain sampled state sequence with subject individual parameters ----------
+            # sample_path_state <- Dur <- vector("list", n_subj)
+            #
+            # for(s in 1:n_subj){
+            #
+            #     # Idea: pre-compute emissions likelihood to pass to FBalgC() here:
+            #
+            #     # Run forward backward algorithm in C++, using the runlength distribution d for each state ================================================================
+            #     d 	<- get.d.lognorm(run.p = list(logmu = logmu[s,], logsd = sqrt(logsigma2)), Mx = subj_data[[s]]$Mx, m = m)
+            #
+            #     delta[[s]] <- get_delta(gamma[[s]], m)
+            #
+            #     allprobs <- get_all1(x = subj_data[[s]]$y, emiss = emiss[[s]], n_dep = n_dep, data_distr = "continuous")
+            #
+            #     FB	<- mult_ed_fb_cpp(
+            #         # y2 = subj_data[[s]]$y,
+            #         m = m,
+            #         n = subj_data[[s]]$n,
+            #         allprobs = t(allprobs),
+            #         Mx = subj_data[[s]]$Mx,
+            #         Mx2 = subj_data[[s]]$Mx2,
+            #         gamma = gamma[[s]],
+            #         d = d,
+            #         S2 = subj_data[[s]]$switch2,
+            #         S = subj_data[[s]]$switch,
+            #         delta = delta[[s]]
+            #     )
+            #
+            #     B_star				<- FB[[2]]
+            #     Occupancy			<- FB[[3]]
+            #     N 					<- FB[[1]]
+            #     PD_subj[[s]][iter-1, m*n_dep*2 + m*m + m*2 + 1] <- llk <- sum(N)	# adjust index; we may need to do log-sum-ex
+            #
+            #     # Using the outcomes of the forward backward algorithm, sample the state sequence ==========================================================================
+            #     trans[[s]]				                <- vector("list", m)
+            #     sample_path_state[[s]][1] 	            <- sample(1:m, 1, prob = delta[[s]] * exp(B_star[,1]))
+            #     Dur[[s]][1] 			                <- sample(1:subj_data[[s]]$Mx, 1, prob = (Occupancy[[1]][sample_path_state[[s]][1],] / exp(B_star[sample_path_state[[s]][1],1])))
+            #     sample_path[[s]][1:Dur[[s]][1], iter]   <- sample_path_state[[s]][1]
+            #
+            #     t <- 1
+            #     while(sum(Dur[[s]]) < subj_data[[s]]$n){
+            #         t 						                                        <- t + 1
+            #         Mx.l 					                                        <- min(subj_data[[s]]$Mx, subj_data[[s]]$n-sum(Dur[[s]]))
+            #         sample_path_state[[s]][t] 	                                    <- sample(1:m, 1, prob = gamma[[s]][sample_path_state[[s]][t-1],] * exp(B_star[,sum(Dur[[s]])+1]))
+            #         trans[[s]][[sample_path_state[[s]][t-1]]]                       <- c(trans[[s]][[sample_path_state[[s]][t-1]]], sample_path_state[[s]][t])
+            #         Dur[[s]][t]			                                            <- sample(1:Mx.l, 1, prob = (Occupancy[[sum(Dur[[s]])+1]][sample_path_state[[s]][t],] / exp(B_star[sample_path_state[[s]][t], sum(Dur[[s]])+1])))
+            #         sample_path[[s]][sum(Dur[[s]][1:t-1],1):sum(Dur[[s]]), iter]    <- sample_path_state[[s]][t]
+            #     }
+            #
+            #     n.Dur[s] <- length(Dur[[s]])
+            #     for (i in 1:m){
+            #         # trans[[s]][[i]]         <- c(trans[[s]][[i]], 1:m) # to avoid errors, check if we can drop
+            #         for (q in 1:n_dep) {
+            #             # cond_y[[s]][[i]]    <- subj_data[[s]]$y[sample_path[[s]][, iter] == i, q]
+            #             if(iter == 2){
+            #                 cond_y[[s]][[i]][[q]] <- c(subj_data[[s]]$y[sample_path[[s]][, iter] == i, q][!is.na(subj_data[[s]]$y[sample_path[[s]][, iter] == i, q])],emiss_mu0[[q]][1,i])
+            #             } else {
+            #                 cond_y[[s]][[i]][[q]] <- c(subj_data[[s]]$y[sample_path[[s]][, iter] == i, q][!is.na(subj_data[[s]]$y[sample_path[[s]][, iter] == i, q])],emiss_c_mu_bar[[i]][[q]][1])
+            #             }
+            #         }
+            #
+            #     }
+            # }
+            #
             # The remainder of the mcmc algorithm is state specific
-            for(i in 1:m){
-
-                # Sample populaton values for gamma and conditional probabilities using Gibbs sampler -----------
-                # gamma_mu0_n and gamma_mu_int_bar are matrices, with the number of rows equal to the number of covariates, and ncol equal to number of intercepts estimated
-                gamma_V_int[[i]]      <- 0
-                gamma_mu_int_bar[[i]] <- matrix(matrix(c(Inf,
-                                                         -Inf), nrow = 2, byrow = TRUE)[i,], nrow = 1)
-                gamma_mu_prob_bar[[i]] 	<- as.vector(matrix(c(0,1,
-                                                              1,0), nrow = 2, byrow = TRUE)[i,])
-
-                # sample population mean (and regression parameters if covariates) of the Normal emission distribution, and it's variance (so the variance between the subject specific means)
-                # note: the posterior is thus one of a Bayesian linear regression because of the optional regression parameters
-                for(q in 1:n_dep){
-                    emiss_mu0_n                    <- solve(t(xx[[1 + q]]) %*% xx[[1 + q]] + emiss_K0[[q]]) %*% (t(xx[[1 + q]]) %*% emiss_c_mu[[i]][[q]] + emiss_K0[[q]] %*% emiss_mu0[[q]][,i])
-                    emiss_a_mu_n                   <- (emiss_K0[[q]] + n_subj) / 2
-                    emiss_b_mu_n                   <- (emiss_nu[[q]] * emiss_V[[q]][i]) / 2 + (t(emiss_c_mu[[i]][[q]]) %*% emiss_c_mu[[i]][[q]] +
-                                                                                                   t(emiss_mu0[[q]][,i]) %*% emiss_K0[[q]] %*% emiss_mu0[[q]][,i] -
-                                                                                                   t(emiss_mu0_n) %*% (t(xx[[1 + q]]) %*% xx[[1 + q]] + emiss_K0[[q]]) %*% emiss_mu0_n) / 2
-                    emiss_V_mu[[i]][[q]]       <- solve(stats::rgamma(1, shape = emiss_a_mu_n, rate = emiss_b_mu_n))
-                    if(all(dim(emiss_V_mu[[i]][[q]]) == c(1,1))){
-                        emiss_c_mu_bar[[i]][[q]]	  <- emiss_mu0_n + rnorm(1 + nx[1 + q] - 1, mean = 0, sd = sqrt(diag(as.numeric(emiss_V_mu[[i]][[q]]) * solve(t(xx[[1 + q]]) %*% xx[[1 + q]] + emiss_K0[[q]]))))
-                    } else {
-                        emiss_c_mu_bar[[i]][[q]]	  <- emiss_mu0_n + rnorm(1 + nx[1 + q] - 1, mean = 0, sd = sqrt(diag(emiss_V_mu[[i]][[q]] * solve(t(xx[[1 + q]]) %*% xx[[1 + q]] + emiss_K0[[q]]))))
-                    }
-                }
-
-                # Sample subject values  -----------
-                for (s in 1:n_subj){
-
-                    gamma[[s]][i,]  	    <- PD_subj[[s]][iter, c((n_dep * 2 * m + 1 + (i - 1) * m):(n_dep * 2 * m + (i - 1) * m + m))] <- as.vector(matrix(c(0,1,
-                                                                                                                                                             1,0), nrow = 2, byrow = TRUE)[i,])
-                    gamma_naccept[s, i]		<- gamma_naccept[s, i] + 1
-                    gamma_c_int[[i]][s,]	<- matrix(c(Inf,
-                                                     -Inf), nrow = 2, byrow = TRUE)[i,]
-                    # gamma_int_subj[[s]][iter, c((1 + (i - 1) * (m - 2)):((m - 2) + (i - 1) * (m - 2)))[-i]] <- gamma_c_int[[i]][s,] # CHECK
-                    gamma_int_subj[[s]][iter, c((1 + (i - 1) * (m - 2)):((m - 2) + (i - 1) * (m - 2)))] <- gamma_c_int[[i]][s,]
-
-                    if(i == m){
-                        delta[[s]] 		<- solve(t(diag(m) - gamma[[s]] + 1), rep(1, m))
-                    }
-                }
-                # Sample subject values for normal emission distribution using Gibbs sampler   ---------
-
-                # population level, conditional probabilities, seperate for each dependent variable
-                for(q in 1:n_dep){
-                    for (s in 1:n_subj){
-                        ss_subj[s] <- t(matrix(cond_y[[s]][[i]][[q]] - emiss_c_mu[[i]][[q]][s,1], nrow = 1) %*%
-                                            matrix(cond_y[[s]][[i]][[q]] - emiss_c_mu[[i]][[q]][s,1], ncol = 1))
-                        n_cond_y[s]       <- length(cond_y[[s]][[i]][[q]])
-                    }
-                    emiss_a_resvar_n <- sum(n_cond_y) / 2 + emiss_a0[[q]][i]
-                    emiss_b_resvar_n <- (sum(ss_subj) + 2 * emiss_b0[[q]][i]) / 2
-                    emiss_c_V[[i]][[q]] <- emiss_var_bar[[q]][iter, i] <- solve(stats::rgamma(1, shape = emiss_a_resvar_n, rate = emiss_b_resvar_n))
-                }
-
-                ### sampling subject specific means for the emission distributions, assuming known mean and var, see Lynch p. 244
-                for(q in 1:n_dep){
-                    emiss_c_V_subj    <- (emiss_V_mu[[i]][[q]] * emiss_c_V[[i]][[q]]) / (2 * emiss_V_mu[[i]][[q]] + emiss_c_V[[i]][[q]])
-                    for (s in 1:n_subj){
-                        emiss_mu0_subj_n  <- (emiss_V_mu[[i]][[q]] * sum(cond_y[[s]][[i]][[q]]) +  emiss_c_V[[i]][[q]] * c(t(emiss_c_mu_bar[[i]][[q]]) %*% xx[[q+1]][s,])) /
-                            (n_cond_y[s] * emiss_V_mu[[i]][[q]] + emiss_c_V[[i]][[q]])
-                        emiss[[s]][[q]][i,1] <- PD_subj[[s]][iter, ((q - 1) * m + i)] <- emiss_c_mu[[i]][[q]][s,1] <- rnorm(1, emiss_mu0_subj_n, sqrt(emiss_c_V_subj))
-                        emiss[[s]][[q]][i,2] <- PD_subj[[s]][iter, (n_dep * m + (q - 1) * m + i)] <- emiss_c_V[[i]][[q]]
-                    }
-                }
-
-
-                #################
-                # Obtain hierarchical and mouse specific parameters for duration distribuiton using gibbs sampler ====================================
-                #################
-
-                #draw logmu's
-                for(s in 1:n_subj){
-                    tau2 		<- 1/ ((1/tau2_d_bar[i]) + (1/logsigma2[i]) * sum(sample_path_state[[s]][-n.Dur[s]] == i))
-                    logmu[s,i]	<- rnorm(1,
-                                        mean = tau2 * ((1/tau2_d_bar[i]) * mu_d_bar[i] + (1/logsigma2[i]) * sum(log(Dur[[s]][-n.Dur[s]][sample_path_state[[s]][-n.Dur[s]] == i]))),
-                                        sd = sqrt(tau2))
-                    PD_subj[[s]][iter, n_dep*m*2 + m*m + i]			<- logmu[s, i] # adjust index
-                }
-
-                # draw mu_d_bar
-                s2				<- 1 / ((1/s2_0[i]) + (1/tau2_d_bar[i]) * n_subj)
-                mu_d_bar[i] 	<- rnorm(1,
-                                      mean = s2 * ((1/s2_0[i]) * d_mu0[i] + (1/tau2_d_bar[i]) * sum(logmu[,i])),
-                                      sd = sqrt(s2))
-
-                # draw tau2_d_bar
-                a1 <- alpha.tau20[i] + n_subj/2
-                b1 <- beta.tau20[i] + (1/2) * (sum((logmu[,i] - mu_d_bar[i])^2))
-                tau2_d_bar[i] <- 1 / rgamma(1, shape = a1, rate = b1)
-
-                #draw logsigma
-                ss <- numeric(1)
-                n.ss <- numeric(1)
-                for (s in 1:n_subj){
-                    ss <- ss + sum((log(Dur[[s]][-n.Dur[s]][sample_path_state[[s]][-n.Dur[s]] == i]) - logmu[s,i])^2)
-                    n.ss <- n.ss + sum(sample_path_state[[s]][-n.Dur[s]] == i)
-                }
-                c1 <- alpha.sigma20[i] + n.ss/2
-                d1 <- beta.sigma20[i] + (1/2) * ss
-                logsigma2[i] <- 1 / rgamma(1, shape = c1, rate = d1)
-                for (s in 1:n_subj) {
-                    PD_subj[[s]][iter, n_dep*m*2 + m*m + m + i] <- logsigma2[i]
-                }
-
-            }
+            # for(i in 1:m){
+            #
+            #     # Sample populaton values for gamma and conditional probabilities using Gibbs sampler -----------
+            #     # gamma_mu0_n and gamma_mu_int_bar are matrices, with the number of rows equal to the number of covariates, and ncol equal to number of intercepts estimated
+            #     gamma_V_int[[i]]      <- 0
+            #     gamma_mu_int_bar[[i]] <- matrix(matrix(c(Inf,
+            #                                              -Inf), nrow = 2, byrow = TRUE)[i,], nrow = 1)
+            #     gamma_mu_prob_bar[[i]] 	<- as.vector(matrix(c(0,1,
+            #                                                   1,0), nrow = 2, byrow = TRUE)[i,])
+            #
+            #     # sample population mean (and regression parameters if covariates) of the Normal emission distribution, and it's variance (so the variance between the subject specific means)
+            #     # note: the posterior is thus one of a Bayesian linear regression because of the optional regression parameters
+            #     for(q in 1:n_dep){
+            #         emiss_mu0_n                    <- solve(t(xx[[1 + q]]) %*% xx[[1 + q]] + emiss_K0[[q]]) %*% (t(xx[[1 + q]]) %*% emiss_c_mu[[i]][[q]] + emiss_K0[[q]] %*% emiss_mu0[[q]][,i])
+            #         emiss_a_mu_n                   <- (emiss_K0[[q]] + n_subj) / 2
+            #         emiss_b_mu_n                   <- (emiss_nu[[q]] * emiss_V[[q]][i]) / 2 + (t(emiss_c_mu[[i]][[q]]) %*% emiss_c_mu[[i]][[q]] +
+            #                                                                                        t(emiss_mu0[[q]][,i]) %*% emiss_K0[[q]] %*% emiss_mu0[[q]][,i] -
+            #                                                                                        t(emiss_mu0_n) %*% (t(xx[[1 + q]]) %*% xx[[1 + q]] + emiss_K0[[q]]) %*% emiss_mu0_n) / 2
+            #         emiss_V_mu[[i]][[q]]       <- solve(stats::rgamma(1, shape = emiss_a_mu_n, rate = emiss_b_mu_n))
+            #         if(all(dim(emiss_V_mu[[i]][[q]]) == c(1,1))){
+            #             emiss_c_mu_bar[[i]][[q]]	  <- emiss_mu0_n + rnorm(1 + nx[1 + q] - 1, mean = 0, sd = sqrt(diag(as.numeric(emiss_V_mu[[i]][[q]]) * solve(t(xx[[1 + q]]) %*% xx[[1 + q]] + emiss_K0[[q]]))))
+            #         } else {
+            #             emiss_c_mu_bar[[i]][[q]]	  <- emiss_mu0_n + rnorm(1 + nx[1 + q] - 1, mean = 0, sd = sqrt(diag(emiss_V_mu[[i]][[q]] * solve(t(xx[[1 + q]]) %*% xx[[1 + q]] + emiss_K0[[q]]))))
+            #         }
+            #     }
+            #
+            #     # Sample subject values  -----------
+            #     for (s in 1:n_subj){
+            #
+            #         gamma[[s]][i,]  	    <- PD_subj[[s]][iter, c((n_dep * 2 * m + 1 + (i - 1) * m):(n_dep * 2 * m + (i - 1) * m + m))] <- as.vector(matrix(c(0,1,
+            #                                                                                                                                                  1,0), nrow = 2, byrow = TRUE)[i,])
+            #         gamma_naccept[s, i]		<- gamma_naccept[s, i] + 1
+            #         gamma_c_int[[i]][s,]	<- matrix(c(Inf,
+            #                                          -Inf), nrow = 2, byrow = TRUE)[i,]
+            #         # gamma_int_subj[[s]][iter, c((1 + (i - 1) * (m - 2)):((m - 2) + (i - 1) * (m - 2)))[-i]] <- gamma_c_int[[i]][s,] # CHECK
+            #         gamma_int_subj[[s]][iter, c((1 + (i - 1) * (m - 2)):((m - 2) + (i - 1) * (m - 2)))] <- gamma_c_int[[i]][s,]
+            #
+            #         if(i == m){
+            #             delta[[s]] 		<- solve(t(diag(m) - gamma[[s]] + 1), rep(1, m))
+            #         }
+            #     }
+            #     # Sample subject values for normal emission distribution using Gibbs sampler   ---------
+            #
+            #     # population level, conditional probabilities, seperate for each dependent variable
+            #     for(q in 1:n_dep){
+            #         for (s in 1:n_subj){
+            #             ss_subj[s] <- t(matrix(cond_y[[s]][[i]][[q]] - emiss_c_mu[[i]][[q]][s,1], nrow = 1) %*%
+            #                                 matrix(cond_y[[s]][[i]][[q]] - emiss_c_mu[[i]][[q]][s,1], ncol = 1))
+            #             n_cond_y[s]       <- length(cond_y[[s]][[i]][[q]])
+            #         }
+            #         emiss_a_resvar_n <- sum(n_cond_y) / 2 + emiss_a0[[q]][i]
+            #         emiss_b_resvar_n <- (sum(ss_subj) + 2 * emiss_b0[[q]][i]) / 2
+            #         emiss_c_V[[i]][[q]] <- emiss_var_bar[[q]][iter, i] <- solve(stats::rgamma(1, shape = emiss_a_resvar_n, rate = emiss_b_resvar_n))
+            #     }
+            #
+            #     ### sampling subject specific means for the emission distributions, assuming known mean and var, see Lynch p. 244
+            #     for(q in 1:n_dep){
+            #         emiss_c_V_subj    <- (emiss_V_mu[[i]][[q]] * emiss_c_V[[i]][[q]]) / (2 * emiss_V_mu[[i]][[q]] + emiss_c_V[[i]][[q]])
+            #         for (s in 1:n_subj){
+            #             emiss_mu0_subj_n  <- (emiss_V_mu[[i]][[q]] * sum(cond_y[[s]][[i]][[q]]) +  emiss_c_V[[i]][[q]] * c(t(emiss_c_mu_bar[[i]][[q]]) %*% xx[[q+1]][s,])) /
+            #                 (n_cond_y[s] * emiss_V_mu[[i]][[q]] + emiss_c_V[[i]][[q]])
+            #             emiss[[s]][[q]][i,1] <- PD_subj[[s]][iter, ((q - 1) * m + i)] <- emiss_c_mu[[i]][[q]][s,1] <- rnorm(1, emiss_mu0_subj_n, sqrt(emiss_c_V_subj))
+            #             emiss[[s]][[q]][i,2] <- PD_subj[[s]][iter, (n_dep * m + (q - 1) * m + i)] <- emiss_c_V[[i]][[q]]
+            #         }
+            #     }
+            #
+            #
+            #     #################
+            #     # Obtain hierarchical and mouse specific parameters for duration distribuiton using gibbs sampler ====================================
+            #     #################
+            #
+            #     #draw logmu's
+            #     for(s in 1:n_subj){
+            #         tau2 		<- 1/ ((1/tau2_d_bar[i]) + (1/logsigma2[i]) * sum(sample_path_state[[s]][-n.Dur[s]] == i))
+            #         logmu[s,i]	<- rnorm(1,
+            #                             mean = tau2 * ((1/tau2_d_bar[i]) * mu_d_bar[i] + (1/logsigma2[i]) * sum(log(Dur[[s]][-n.Dur[s]][sample_path_state[[s]][-n.Dur[s]] == i]))),
+            #                             sd = sqrt(tau2))
+            #         PD_subj[[s]][iter, n_dep*m*2 + m*m + i]			<- logmu[s, i] # adjust index
+            #     }
+            #
+            #     # draw mu_d_bar
+            #     s2				<- 1 / ((1/s2_0[i]) + (1/tau2_d_bar[i]) * n_subj)
+            #     mu_d_bar[i] 	<- rnorm(1,
+            #                           mean = s2 * ((1/s2_0[i]) * d_mu0[i] + (1/tau2_d_bar[i]) * sum(logmu[,i])),
+            #                           sd = sqrt(s2))
+            #
+            #     # draw tau2_d_bar
+            #     a1 <- alpha.tau20[i] + n_subj/2
+            #     b1 <- beta.tau20[i] + (1/2) * (sum((logmu[,i] - mu_d_bar[i])^2))
+            #     tau2_d_bar[i] <- 1 / rgamma(1, shape = a1, rate = b1)
+            #
+            #     #draw logsigma
+            #     ss <- numeric(1)
+            #     n.ss <- numeric(1)
+            #     for (s in 1:n_subj){
+            #         ss <- ss + sum((log(Dur[[s]][-n.Dur[s]][sample_path_state[[s]][-n.Dur[s]] == i]) - logmu[s,i])^2)
+            #         n.ss <- n.ss + sum(sample_path_state[[s]][-n.Dur[s]] == i)
+            #     }
+            #     c1 <- alpha.sigma20[i] + n.ss/2
+            #     d1 <- beta.sigma20[i] + (1/2) * ss
+            #     logsigma2[i] <- 1 / rgamma(1, shape = c1, rate = d1)
+            #     for (s in 1:n_subj) {
+            #         PD_subj[[s]][iter, n_dep*m*2 + m*m + m + i] <- logsigma2[i]
+            #     }
+            #
+            # }
 
         } else if (m >= 3){
 
@@ -948,7 +1035,8 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
                 # Idea: pre-compute emissions likelihood to pass to FBalgC() here:
 
                 # Run forward backward algorithm in C++, using the runlength distribution d for each state ================================================================
-                d 	<- get.d.lognorm(run.p = list(logmu = logmu[s,], logsd = sqrt(logsigma2)), Mx = subj_data[[s]]$Mx, m = m)
+                # d 	<- get.d.pois(run.p = list(lambda = dwell_c_mu[[i]][s,1]), Mx = subj_data[[s]]$Mx, m = m) # Check
+                d 	<- get.d.pois(run.p = list(lambda = t(dwell[[s]])), Mx = subj_data[[s]]$Mx, m = m)
 
                 delta[[s]] <- get_delta(gamma[[s]], m)
 
@@ -971,7 +1059,7 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
                 B_star				<- FB[[2]]
                 Occupancy			<- FB[[3]]
                 N 					<- FB[[1]]
-                PD_subj[[s]][iter-1, m*n_dep*2 + m*m + m*2 + 1] <- llk <- sum(N)	# adjust index; we may need to do log-sum-ex
+                PD_subj[[s]][iter-1, m*n_dep*2 + m*m + m + 1] <- llk <- sum(N)	# adjust index; we may need to do log-sum-ex
 
                 # Using the outcomes of the forward backward algorithm, sample the state sequence ==========================================================================
                 trans[[s]]				                <- vector("list", m)
@@ -1105,7 +1193,7 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
                 }
                 # Sample subject values for normal emission distribution using Gibbs sampler   ---------
 
-                # population level, conditional probabilities, separate for each dependent variable
+                # population level, conditional probabilities, seperate for each dependent variable
                 for(q in 1:n_dep){
                     for (s in 1:n_subj){
                         ss_subj[s] <- t(matrix(cond_y[[s]][[i]][[q]] - emiss_c_mu[[i]][[q]][s,1], nrow = 1) %*%
@@ -1130,41 +1218,77 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
 
 
                 #################
-                # Obtain hierarchical and mouse specific parameters for duration distribution using Gibbs sampler ====================================
+                # Obtain hierarchical and individual specific parameters for duration distribution ====================================
                 #################
 
-                #draw logmu's
+                # population level, conditional probabilities, separate for each dependent variable
+                Dur_pooled					      <- numeric()
                 for(s in 1:n_subj){
-                    tau2 		<- 1/ ((1/tau2_d_bar[i]) + (1/logsigma2[i]) * sum(sample_path_state[[s]][-n.Dur[s]] == i))
-                    logmu[s,i]	<- rnorm(1,
-                                        mean = tau2 * ((1/tau2_d_bar[i]) * mu_d_bar[i] + (1/logsigma2[i]) * sum(log(Dur[[s]][-n.Dur[s]][sample_path_state[[s]][-n.Dur[s]] == i]))),
-                                        sd = sqrt(tau2))
-                    PD_subj[[s]][iter, n_dep*m*2 + m*m + i]			<- logmu[s, i] # adjust index
+                    Dur_pooled             <- c(Dur_pooled, Dur[[s]][-n.Dur[s]][sample_path_state[[s]][-n.Dur[s]] == i])
+                }
+                if(iter <= 2) {
+                    dwell_c_mu_bar[[i]] <- log(start_val[[n_dep+2]][i,1])
+                }
+                dwell_mle_pooled[[i]]  <- mean(c(Dur_pooled, round(exp(dwell_c_mu_bar[[i]][1]),0)))
+                if(dwell_mle_pooled[[i]] == 0){
+                    dwell_mle_pooled[[i]] <- 1
+                }
+                dwell_pooled_ll[[i]]	<- llpois(lambda = dwell_mle_pooled[[i]], Obs = c(Dur_pooled, round(exp(dwell_c_mu_bar[[i]][1]),0))) # Check Dur cond_y pooled?
+
+                # subject level, conditional probabilities, seperate for each dependent variable
+                for(s in 1:n_subj){
+                    dwell_out	<- optim(log(dwell_mle_pooled[[i]]), llpois_frac_log, Obs = c(Dur[[s]][-n.Dur[s]][sample_path_state[[s]][-n.Dur[s]] == i],
+                                                                                            round(exp(dwell_c_mu_bar[[i]][1]),0)),
+                                       pooled_likel = dwell_pooled_ll[[i]],
+                                       w = dwell_w, wgt = wgt,
+                                       method = "BFGS",
+                                       hessian = TRUE,
+                                       control = list(fnscale = -1))
+                    if(dwell_out$convergence == 0){
+                        subj_data[[s]]$dwell_converge[i]   <- 1
+                        subj_data[[s]]$dwell_mle[i]        <- exp(dwell_out$par)
+                        subj_data[[s]]$dwell_mhess[i]      <- as.numeric(-dwell_out$hessian)
+                    } else {
+                        subj_data[[s]]$dwell_converge[i]   <- 0
+                        subj_data[[s]]$dwell_mle[i]        <- 0
+                        subj_data[[s]]$dwell_mhess[i]	   <- 0
+                    }
+
                 }
 
-                # draw mu_d_bar
-                s2				<- 1 / ((1/s2_0[i]) + (1/tau2_d_bar[i]) * n_subj)
-                mu_d_bar[i] 	<- rnorm(1,
-                                      mean = s2 * ((1/s2_0[i]) * d_mu0[i] + (1/tau2_d_bar[i]) * sum(logmu[,i])),
-                                      sd = sqrt(s2))
+                # sample population mean (and regression parameters if covariates) of the Normal emission distribution, and it's variance (so the variance between the subject specific means)
+                # note: the posterior is thus one of a Bayesian linear regression because of the optional regression parameters
+                dwell_mu0_n                    <- solve(t(xx[[2 + n_dep]]) %*% xx[[2 + n_dep]] + dwell_K0) %*% (t(xx[[2 + n_dep]]) %*% log(dwell_c_mu[[i]]) + dwell_K0 %*% dwell_mu0[,i]) # CHECK THIS
+                dwell_a_mu_n                   <- (dwell_K0 + n_subj) / 2
+                dwell_b_mu_n                   <- (dwell_nu * dwell_V[i]) / 2 + (t(log(dwell_c_mu[[i]])) %*% log(dwell_c_mu[[i]]) +
+                                                                                     t(dwell_mu0[,i]) %*% dwell_K0 %*% dwell_mu0[,i] -
+                                                                                     t(dwell_mu0_n) %*% (t(xx[[2 + n_dep]]) %*% xx[[2 + n_dep]] + dwell_K0) %*% dwell_mu0_n) / 2
+                dwell_V_mu[[i]]       <- solve(rgamma(1, shape = dwell_a_mu_n, rate = dwell_b_mu_n))
+                if(all(dim(dwell_V_mu[[i]]) == c(1,1))){ # CHECK THIS
+                    dwell_c_mu_bar[[i]]	  <- dwell_mu0_n + rnorm(1 + nx[2 + n_dep] - 1, mean = 0, sd = sqrt(diag(as.numeric(dwell_V_mu[[i]]) * solve(t(xx[[2 + n_dep]]) %*% xx[[2 + n_dep]] + dwell_K0))))
+                } else {
+                    dwell_c_mu_bar[[i]]	  <- dwell_mu0_n + rnorm(1 + nx[2 + n_dep] - 1, mean = 0, sd = sqrt(diag(dwell_V_mu[[i]] * solve(t(xx[[2 + n_dep]]) %*% xx[[2 + n_dep]] + dwell_K0))))
+                }
 
-                # draw tau2_d_bar
-                a1 <- alpha.tau20[i] + n_subj/2
-                b1 <- beta.tau20[i] + (1/2) * (sum((logmu[,i] - mu_d_bar[i])^2))
-                tau2_d_bar[i] <- 1 / rgamma(1, shape = a1, rate = b1)
+                # Sample subject values for normal emission distribution using Gibbs sampler   ---------
 
-                #draw logsigma
-                ss <- numeric(1)
-                n.ss <- numeric(1)
+                ### sampling subject specific means for the emission distributions, assuming known mean and var, see Lynch p. 244
                 for (s in 1:n_subj){
-                    ss <- ss + sum((log(Dur[[s]][-n.Dur[s]][sample_path_state[[s]][-n.Dur[s]] == i]) - logmu[s,i])^2)
-                    n.ss <- n.ss + sum(sample_path_state[[s]][-n.Dur[s]] == i)
-                }
-                c1 <- alpha.sigma20[i] + n.ss/2
-                d1 <- beta.sigma20[i] + (1/2) * ss
-                logsigma2[i] <- 1 / rgamma(1, shape = c1, rate = d1)
-                for (s in 1:n_subj) {
-                    PD_subj[[s]][iter, n_dep*m*2 + m*m + m + i] <- logsigma2[i]
+
+                    # Sample subject specific lambda with RW-MH
+                    dwell_mu0_subj_bar <- c(t(dwell_c_mu_bar[[i]]) %*% xx[[2 + n_dep]][s,]) # Update: add xx for dwell time?
+                    dwell_candcov_comb <- (subj_data[[s]]$dwell_mhess[i] + dwell_V_mu[[i]]^-1)^-1
+                    dwell_rw_out <- poisLN_RW_once(lambda = dwell_c_mu[[i]][s,1],
+                                                   # Obs = c(cond_y[[s]][[i]], round(exp(dwell_mu0_subj_bar), 0)), # Dur instead of cond_y
+                                                   Obs = c(Dur[[s]][-n.Dur[s]][sample_path_state[[s]][-n.Dur[s]] == i], round(exp(dwell_mu0_subj_bar), 0)),
+                                                   mu_bar1 = dwell_mu0_subj_bar,
+                                                   V_1 = sqrt(dwell_V_mu[[i]]),
+                                                   scalar = dwell_scalar,
+                                                   candcov1 = dwell_candcov_comb)
+
+                    dwell[[s]][i,1]        <- PD_subj[[s]][iter, n_dep*m*2 + m*m + i] <- dwell_c_mu[[i]][s,1] <- dwell_rw_out$draw_lambda # Check PD dwell time indexation
+                    dwell_naccept[s, i]    <- dwell_naccept[s, i] + dwell_rw_out$accept
+
                 }
 
             }
@@ -1197,10 +1321,20 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
         }
 
         # dwell time parameters
-        # duration_bar[iter,] <- c(mu_d_bar, logsigma2, tau2_d_bar)
-        dwell_mu_bar[iter, ] <- mu_d_bar # IMPROVE memory use
-        dwell_varmu_bar[iter, ] <- tau2_d_bar
-        dwell_var_bar[iter, ] <- logsigma2
+        dwell_mu_bar[iter, ]	<- as.vector(unlist(lapply(dwell_c_mu_bar, "[",1,)))
+        if(nx[2+n_dep] > 1){
+            dwell_cov_bar[iter, ]  <- as.vector(unlist(lapply(dwell_c_mu_bar, "[",-1,)))
+        }
+        # dwell_varmu_bar[iter,]	<- as.vector(unlist(sapply(dwell_V_mu, "[", )))
+        dwell_varmu_bar[iter,]	<- unlist(dwell_V_mu)
+
+
+
+        # # dwell time parameters
+        # # duration_bar[iter,] <- c(mu_d_bar, logsigma2, tau2_d_bar)
+        # dwell_mu_bar[iter, ] <- mu_d_bar # IMPROVE memory use
+        # dwell_varmu_bar[iter, ] <- tau2_d_bar
+        # dwell_var_bar[iter, ] <- logsigma2
 
         if(show_progress == TRUE){
             utils::setTxtProgressBar(pb, iter)
@@ -1225,8 +1359,10 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
                     gamma_naccept = gamma_naccept,
                     emiss_mu_bar = emiss_mu_bar, emiss_varmu_bar = emiss_varmu_bar, emiss_cov_bar = emiss_cov_bar,
                     emiss_var_bar = emiss_var_bar,
-                    dwell_mu_bar = dwell_mu_bar, dwell_varmu_bar = dwell_varmu_bar,
-                    dwell_var_bar = dwell_var_bar,
+                    dwell_mu_bar = dwell_mu_bar,
+                    dwell_varmu_bar = dwell_varmu_bar,
+                    dwell_cov_bar = dwell_cov_bar,
+                    dwell_naccept = dwell_naccept,
                     sample_path = sample_path)
     } else {
         out <- list(input = list(m = m, n_dep = n_dep, J = J,
@@ -1241,7 +1377,8 @@ medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwel
                     emiss_mu_bar = emiss_mu_bar, emiss_varmu_bar = emiss_varmu_bar, emiss_cov_bar = emiss_cov_bar,
                     emiss_var_bar = emiss_var_bar,
                     dwell_mu_bar = dwell_mu_bar, dwell_varmu_bar = dwell_varmu_bar,
-                    dwell_var_bar = dwell_var_bar)
+                    dwell_cov_bar = dwell_cov_bar,
+                    dwell_naccept = dwell_naccept)
     }
     class(out) <- append(class(out), "medHMM_cont")
     return(out)

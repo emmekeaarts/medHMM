@@ -239,3 +239,66 @@ hms <- function(t){
           formatC(t %% 60, width = 2, format = "d", flag = "0"),
           sep = ":")
 }
+
+
+
+
+#-------------------------------------------------------------------------#
+#                   For Poisson-lognormal dwell times                     #
+#-------------------------------------------------------------------------#
+
+#' @keywords internal
+#' get d distribution for Poisson
+get.d.pois <- function(run.p, Mx, m){
+    input.d <-  matrix(rep(0:(Mx-1), m), nrow = m, byrow = TRUE)
+    d <- cbind(rep(0,m), apply(input.d, 2, dpois, lambda = run.p$lambda))
+    return(d)
+}
+
+#' @keywords internal
+# Obtain poisson log likelihood
+llpois <- function(lambda, Obs){
+    ll_pois <- sum(dpois(Obs, lambda, log = TRUE))
+    return(ll_pois)
+}
+
+#' @keywords internal
+# Obtain fractional log likelihood for multinomial intercept only model, bassed on P. Rossi 2004
+llpois_frac_log <- function(par, Obs, n_cat, pooled_likel, w, wgt){
+    return((1 - w) * llpois(lambda = exp(par), Obs = Obs) + w * wgt * pooled_likel)
+}
+
+# one run of the random walk metropolis sampler for an intercept only multinomial distribution
+# this means no covariates at the lower/time level
+
+#' @keywords internal
+# Poisson-LogNormal implemented with dnorm()
+poisLN_RW_once <- function(lambda, Obs, mu_bar1, V_1, scalar, candcov1) {
+
+    # obtain likelihood and transition prob with the parameters sampled in the previous iteration and current sampled state sequence
+    oldloglike	 	<- llpois(lambda = lambda, Obs = Obs)
+    oldpostlike	 	<- oldloglike + dnorm(log(lambda), mu_bar1, V_1, log = TRUE)
+
+    # obtain new parameters for gamma from proposal distribution plus new likelihood
+    lambda_new		<- exp(log(lambda) + rnorm(1, 0, scalar * sqrt(candcov1)))
+    newloglike	 	<- llpois(lambda = lambda_new, Obs = Obs)
+    newpostlike	 	<- newloglike + dnorm(log(lambda_new), mu_bar1, V_1, log = TRUE)
+
+    # determine to use the updated or current (previous iteration) gamma values of the parameters
+    acc 			<- min(log(1), (newpostlike - oldpostlike))
+    if(acc < log(1)) {
+        unif        <- log(runif(1))
+    } else {
+        unif        <- log(1)
+    }
+    if (unif <= acc) {
+        draw_lambda	<- lambda_new
+        accept		<- 1
+    } else {
+        draw_lambda	<- lambda
+        accept		<- 0
+    }
+
+    return(list(draw_lambda = draw_lambda, accept = accept))
+}
+

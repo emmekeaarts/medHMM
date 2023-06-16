@@ -15,7 +15,7 @@ sim_medHMM(
   gamma,
   emiss_distr,
   dwell_distr,
-  dwell_type = "logNormal",
+  dwell_type = "lognormal",
   xx_vec = NULL,
   beta = NULL,
   var_gamma = 0.1,
@@ -75,15 +75,24 @@ Normal distribution.}
 
 \item{dwell_distr}{A matrix containing the average population parameters for
 the dwelling distribution of the states. If \code{dwell_type =
-  'logNormal'}, the matrix has a dimension of \code{m} rows and 2 columns;
+  'lognormal'}, the matrix has a dimension of \code{m} rows and 2 columns;
 the first column denoting the log-mean of state \emph{i} (row \emph{i})
 and the second column denoting the log-variance of state \emph{i} (row
-\emph{i}) of the log-Normal distribution.}
+\emph{i}) of the log-Normal distribution. If \code{dwel_type = 'poisson'},
+the matrix has a dimension of \code{m} rows and 1 column denoting the
+group-level log-mean of the lognormal prior used to sample the subject-
+specific Poisson parameters \code{lambda} of state \emph{i}
+(row \emph{i}) of the poisson-lognormal distribution. Notice that in both
+cases the means are expressed in the logarithmic scale (see the examples
+below).}
 
 \item{dwell_type}{Family of distribution to sample state dwelling times.
-Currently it only takes de value \code{dwell_type = 'logNormal'} which
-specifies an approximation to the discrete dwelling times through
-a continuous log-Normal distribution.}
+Currently it only takes de values
+\code{dwell_type = c('lognormal','poisson')} which
+specifies either an approximation to the discrete dwelling times through
+a continuous log-Normal distribution, or a discrete Poisson distribution
+with a lognormal prior. Notice that the default value is
+\code{dwell_type = 'lognormal'}.}
 
 \item{xx_vec}{List of 1 + \code{n_dep} vectors containing the covariate(s) to
 predict the transition probability matrix \code{gamma} and/or (specific)
@@ -168,15 +177,14 @@ vector of 0's.}
 
 \item{var_dwell}{A numeric vector with length 1 denoting the amount of
 variance between subjects in the state dwelling distribution. Note that
-in the case of \code{dwell_type = 'logNormal'} this value corresponds to
-the variance of the log-mean of the log-Normal distribution in the
-logarithmic scale. In addition, only one variance value can be specified
-for the complete transition probability matrix, hence the
-variance is assumed fixed across all components. The default equals 0.01,
-which corresponds to little variation between subjects. If one wants to
-simulate data from exactly the same HMM for all subjects, \code{var_dwell}
-should be set to 0. Note that if data for only 1 subject is simulated
-(i.e., n = 1), \code{var_dwell} is set to 0.}
+this value corresponds to the variance of the log-mean of the lognormal
+distribution in the logarithmic scale. In addition, only one variance
+value can be specified for the complete transition probability matrix,
+hence the variance is assumed fixed across all components. The default
+equals 0.01, which corresponds to little variation between subjects. If
+one wants to simulate data from exactly the same HMM for all subjects,
+\code{var_dwell} should be set to 0. Note that if data for only 1 subject
+is simulated (i.e., n = 1), \code{var_dwell} is set to 0.}
 
 \item{return_ind_par}{A logical scalar. Should the subject specific
 transition probability matrix \code{gamma} and emission probability matrix
@@ -265,8 +273,8 @@ state one.
 }
 \examples{
 ###### Example on simulated data
-Simulating multivariate continuous data
-Define model parameters:
+# Simulating multivariate continuous data with a lognormal dwell distribution
+# Define model parameters:
 n_t <- 200
 n <- 20
 m <- 3
@@ -290,8 +298,41 @@ dwell_distr <- dwell_start <- matrix(log(c(20,2,
 
 # Simulate data
 sim_data <- sim_medHMM(n_t, n, data_distr = 'continuous', m, n_dep = n_dep,
-                       dwell_distr = dwell_distr, dwell_type = 'logNormal',
+                       dwell_distr = dwell_distr, dwell_type = 'lognormal',
                        start_state = NULL, q_emiss = NULL, gamma = gamma, emiss_distr = emiss_distr, xx_vec = NULL, beta = NULL,
-                       var_gamma = 0.1, var_emiss = c(0.1,0.1), var_dwell = 0.01, return_ind_par = TRUE)
+                       var_gamma = 0.1, var_emiss = c(0.1,0.1), var_dwell = 0.1, return_ind_par = TRUE)
+
+
+# Simulating multivariate continuous data with a Poisson-lognormal dwell distribution
+# Define model parameters:
+n_t <- 200
+n <- 20
+m <- 3
+n_dep <- 2
+
+
+gamma <- matrix(c(0, 0.7, 0.3,
+                  0.5, 0, 0.5,
+                  0.6, 0.4, 0), nrow = m, ncol = m, byrow = TRUE)
+
+emiss_distr <- list(matrix(c(10,2,
+                             50,2,
+                             2,2), nrow = m, ncol = 2, byrow = TRUE),
+                    matrix(c(-5,2,
+                             -20,2,
+                             5,2), nrow = m, ncol = 2, byrow = TRUE))
+
+dwell_distr <- dwell_start <- matrix(log(c(10,
+                                           2,
+                                           50)), nrow = m, ncol = 1, byrow = TRUE)
+
+# Simulating multivariate continuous data with a poisson dwell distribution
+# Define model parameters:
+set.seed(42)
+sim_data_pois <- sim_data <- medHMM::sim_medHMM(n_t, n, data_distr = 'continuous', m, n_dep = n_dep,
+                                                dwell_distr = dwell_distr, dwell_type = 'poisson',
+                                                start_state = NULL, q_emiss = NULL, gamma = gamma, emiss_distr = emiss_distr, xx_vec = NULL, beta = NULL,
+                                                var_gamma = 0.1, var_emiss = c(0.1,0.1), var_dwell = 0.1, return_ind_par = TRUE)
+
 
 }
