@@ -3,6 +3,7 @@
 export(medHMM_cont)
 export(medHMM_cont_lognorm)
 export(medHMM_cont_pois)
+export(medHMM_cont_shiftpois)
 export(sim_medHMM)
 importFrom(MCMCpack,rdirichlet)
 importFrom(MCMCpack,rwish)
