@@ -1186,7 +1186,8 @@ medHMM_cont_shiftpois <- function(s_data, gen, xx = NULL, start_val,
                                                   V_int1 = gamma_V_int[[i]],
                                                   scalar = gamma_scalar,
                                                   candcov1 = gamma_candcov_comb)
-                    gamma[[s]][i,-i]  	    <- PD_subj[[s]][iter, c((n_dep * 2 * m + 1 + (i - 1) * m):(n_dep * 2 * m + (i - 1) * m + m))[-i]] <- gamma_RWout$prob
+                    gamma[[s]][i,-i]  	    <- (gamma_RWout$prob + .00001) / (1 + .00001 * m)
+                    PD_subj[[s]][iter, c((n_dep * 2 * m + 1 + (i - 1) * m):(n_dep * 2 * m + (i - 1) * m + m))[-i]] <- gamma_RWout$prob
                     PD_subj[[s]][iter, c((n_dep * 2 * m + 1 + (i - 1) * m):(n_dep * 2 * m + (i - 1) * m + m))[i]] <- 0
                     gamma_naccept[s, i]		<- gamma_naccept[s, i] + gamma_RWout$accept
                     gamma_c_int[[i]][s,]	<- gamma_RWout$draw_int
@@ -1199,7 +1200,7 @@ medHMM_cont_shiftpois <- function(s_data, gen, xx = NULL, start_val,
                 }
                 # Sample subject values for normal emission distribution using Gibbs sampler   ---------
 
-                # population level, conditional probabilities, seperate for each dependent variable
+                # population level, conditional probabilities, separate for each dependent variable
                 for(q in 1:n_dep){
                     for (s in 1:n_subj){
                         ss_subj[s] <- t(matrix(cond_y[[s]][[i]][[q]] - emiss_c_mu[[i]][[q]][s,1], nrow = 1) %*%
