@@ -5,10 +5,7 @@ Depends: R (>= 3.5.0)
 Imports: 
     Rcpp,
     mvtnorm,
-    MCMCpack,
-    foreach,
-    doParallel,
-    parallel
+    MCMCpack
 Authors@R: c(person("Emmeke", "Aarts", email = "e.aarts@uu.nl",
                   role = c("aut", "cre"), comment = c(ORCID = "0000-0002-2432-7564")),
              person("Sebastian", "Mildiner Moraga", role = "aut", comment = c(ORCID = "0000-0001-6282-7394")))      
