@@ -508,8 +508,11 @@ medHMM_cont_shiftpois <- function(s_data, gen, xx = NULL, start_val,
         switched 			<- rep(0, n)
         switched[1] 		<- 1
         for (t in 2:n) {
-            if(any(subj_data[[s]]$y[t,] != subj_data[[s]]$y[t-1,])) {
-                switched[t] <- 1}
+            if(!any(is.na(subj_data[[s]]$y[t,]) | is.na(subj_data[[s]]$y[t-1,]))){
+                if(any(subj_data[[s]]$y[t,] != subj_data[[s]]$y[t-1,])) {
+                    switched[t] <- 1
+                }
+            }
         }
         switched2 		<- c(switched[-1],1)
 
@@ -1057,8 +1060,10 @@ medHMM_cont_shiftpois <- function(s_data, gen, xx = NULL, start_val,
                     Mx2 = subj_data[[s]]$Mx2,
                     gamma = gamma[[s]],
                     d = d,
-                    S2 = subj_data[[s]]$switch2,
-                    S = subj_data[[s]]$switch,
+                    # S2 = subj_data[[s]]$switch2,
+                    # S = subj_data[[s]]$switch,
+                    S2 = rep(1,subj_data[[s]]$n),
+                    S = rep(1,subj_data[[s]]$n),
                     delta = delta[[s]]
                 )
 
