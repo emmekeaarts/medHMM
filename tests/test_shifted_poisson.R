@@ -674,7 +674,7 @@ s_data = sim_data$obs
 gen = list(m = m, n_dep = n_dep)
 start_val = c(list(gamma), emiss_distr, list(dwell_distr))
 emiss_hyp_prior = emiss_hyp_pr
-dwell_hyp_prior = dwell_hyp_pr_plnorm
+dwell_hyp_prior = dwell_hyp_pr
 show_progress = TRUE
 shift = NULL
 mcmc = list(J = 500, burn_in = 250)
@@ -1279,9 +1279,6 @@ medHMM_cont_shiftpois <- function(s_data, gen, xx = NULL, start_val,
 
         } else if (m >= 3){
 
-            h = 20
-            iter = 2
-
             # For each subject, obtain sampled state sequence with subject individual parameters ----------
             sample_path_state <- Dur <- vector("list", n_subj)
 
@@ -1295,14 +1292,12 @@ medHMM_cont_shiftpois <- function(s_data, gen, xx = NULL, start_val,
 
                 delta[[s]] <- get_delta(gamma[[s]], m)
 
-                # allprobs <- get_all1(x = subj_data[[s]]$y, emiss = emiss[[s]], n_dep = n_dep, data_distr = "continuous")
-                allprobs <- get_all1(x = rbind(subj_data[[s]]$y,matrix(NA_real_, nrow = h, ncol = 2)), emiss = emiss[[s]], n_dep = n_dep, data_distr = "continuous")
+                allprobs <- get_all1(x = subj_data[[s]]$y, emiss = emiss[[s]], n_dep = n_dep, data_distr = "continuous")
 
                 FB	<- mult_ed_fb_cpp(
                     # y2 = subj_data[[s]]$y,
                     m = m,
-                    # n = subj_data[[s]]$n,
-                    n = (subj_data[[s]]$n+h),
+                    n = subj_data[[s]]$n,
                     allprobs = t(allprobs),
                     Mx = subj_data[[s]]$Mx,
                     Mx2 = subj_data[[s]]$Mx2,
@@ -1310,8 +1305,8 @@ medHMM_cont_shiftpois <- function(s_data, gen, xx = NULL, start_val,
                     d = d,
                     # S2 = subj_data[[s]]$switch2,
                     # S = subj_data[[s]]$switch,
-                    S2 = rep(1,(subj_data[[s]]$n+h)),
-                    S = rep(1,(subj_data[[s]]$n+h)),
+                    S2 = rep(1,subj_data[[s]]$n),
+                    S = rep(1,subj_data[[s]]$n),
                     delta = delta[[s]]
                 )
 
@@ -1645,4 +1640,80 @@ medHMM_cont_shiftpois <- function(s_data, gen, xx = NULL, start_val,
     return(out)
 }
 
+
+
+
+
+
+
+
+
+
+
+###### Example on simulated data
+# Simulating multivariate continuous data with a Poisson-lognormal dwell distribution
+# Define model parameters:
+n_t <- 1000
+n <- 250
+m <- 3
+n_dep <- 2
+
+
+gamma <- matrix(c(0, 0.7, 0.3,
+                  0.5, 0, 0.5,
+                  0.6, 0.4, 0), nrow = m, ncol = m, byrow = TRUE)
+
+emiss_distr <- list(matrix(c(10,2,
+                             50,2,
+                             2,2), nrow = m, ncol = 2, byrow = TRUE),
+                    matrix(c(-5,2,
+                             -20,2,
+                             5,2), nrow = m, ncol = 2, byrow = TRUE))
+
+dwell_distr <- dwell_start <- matrix(log(c(10,
+                                           2,
+                                           20)), nrow = m, ncol = 1, byrow = TRUE)
+
+# Simulating multivariate continuous data with a poisson dwell distribution
+# Define model parameters:
+set.seed(42)
+sim_data <- sim_medHMM(n_t, n, data_distr = 'continuous', m, n_dep = n_dep,
+                       dwell_distr = dwell_distr, dwell_type = 'poisson',
+                       start_state = NULL, q_emiss = NULL, gamma = gamma, emiss_distr = emiss_distr, xx_vec = NULL, beta = NULL,
+                       var_gamma = 0.1, var_emiss = c(1,1), var_dwell = 0.0001, return_ind_par = TRUE)
+
+dwell_distr <- dwell_start <- matrix(log(c(11,
+                                           3,
+                                           20)), nrow = m, ncol = 1, byrow = TRUE)
+
+# Specify hyper-prior for the continuous emission distribution
+emiss_hyp_pr <- list(
+    emiss_mu0 = list(matrix(c(10,50,2), nrow = 1),
+                     matrix(c(-5, -20, 5), nrow = 1)),
+    emiss_K0  = list(1, 1),
+    emiss_nu  = list(1, 1),
+    emiss_V   = list(rep(10, m), rep(10, m)),
+    emiss_a0  = list(rep(0.01, m), rep(0.01, m)),
+    emiss_b0  = list(rep(0.01, m), rep(0.01, m))
+)
+
+## Define dwell hyper-priors
+dwell_hyp_pr <- list(
+    dwell_mu0 = matrix(log(c(10,
+                             2,
+                             20)), nrow = 1, ncol = 3), # nrow = number of covariates + 1; ncol = number of hidden states
+    dwell_K0  = c(1),
+    dwell_nu  = c(1),
+    dwell_V   = rep(0.1, m)
+)
+
+# Train the medHMM:
+out_pois <- medHMM_cont_shiftpois(s_data = sim_data$obs,
+                                  gen = list(m = m, n_dep = n_dep),
+                                  # start_val = c(list(gamma), emiss_distr, list(exp(dwell_distr))), # Notice exp()
+                                  start_val = c(list(gamma), emiss_distr, list(exp(dwell_distr))), # Notice exp()
+                                  emiss_hyp_prior = emiss_hyp_pr,
+                                  dwell_hyp_prior = dwell_hyp_pr,
+                                  show_progress = TRUE,
+                                  mcmc = list(J = 200, burn_in = 100), return_path = TRUE, max_dwell = 40)
 
