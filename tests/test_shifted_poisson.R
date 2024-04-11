@@ -2,105 +2,8 @@
 #               For shifet Poisson-lognormal dwell times                #
 #-----------------------------------------------------------------------#
 
-library(tidyverse)
-library(mHMMbayes)
-
-# ## 3 states
-# n_t <- 500
-# n <- 20
-# m <- 3
-# n_dep <- 2
-#
-#
-# gamma <- matrix(c(0, 0.7, 0.3,
-#                   0.5, 0, 0.5,
-#                   0.6, 0.4, 0), nrow = m, ncol = m, byrow = TRUE)
-#
-# emiss_distr <- list(matrix(c(10,2,
-#                              50,2,
-#                              2,2), nrow = m, ncol = 2, byrow = TRUE),
-#                     matrix(c(-5,2,
-#                              -20,2,
-#                              5,2), nrow = m, ncol = 2, byrow = TRUE))
-#
-# dwell_distr <- dwell_start <- matrix(log(c(5,1,
-#                                            2,1,
-#                                            10,1)), nrow = m, ncol = 2, byrow = TRUE)
-#
-# # Simulate data
-# set.seed(42)
-# sim_data_pois <- sim_data <- medHMM::sim_medHMM(n_t, n, data_distr = 'continuous', m, n_dep = n_dep,
-#                                                 dwell_distr = matrix(dwell_distr[,1], ncol = 1), dwell_type = 'poisson',
-#                                                 start_state = NULL, q_emiss = NULL, gamma = gamma, emiss_distr = emiss_distr, xx_vec = NULL, beta = NULL,
-#                                                 var_gamma = 0.1, var_emiss = c(0.1,0.1), var_dwell = 0.1, return_ind_par = TRUE)
-#
-#
-# # Specify hyper-prior for the continuous emission distribution
-# emiss_hyp_pr <- list(
-#     emiss_mu0 = list(matrix(c(10,50,2), nrow = 1),
-#                      matrix(c(-5, -20, 5), nrow = 1)),
-#     emiss_K0  = list(1, 1),
-#     emiss_nu  = list(1, 1),
-#     emiss_V   = list(rep(10, m), rep(10, m)),
-#     emiss_a0  = list(rep(0.01, m), rep(0.01, m)),
-#     emiss_b0  = list(rep(0.01, m), rep(0.01, m))
-# )
-#
-# ## Define hyper-priors
-# dwell_hyp_pr_plnorm <- list(
-#     dwell_mu0 = matrix(log(c(5,2,10)), nrow = 1, ncol = 3), # nrow = number of covariates + 1; ncol = number of hidden states
-#     dwell_K0  = c(1),
-#     dwell_nu  = c(1),
-#     dwell_V   = rep(0.1, m)
-# )
-#
-#
-# # Run the model on the simulated data:
-# out_pois <- medHMM_cont_pois(s_data = sim_data$obs,
-#                              gen = list(m = m, n_dep = n_dep),
-#                              start_val = c(list(gamma), emiss_distr, list(matrix(dwell_start[,1], ncol = 1))),
-#                              emiss_hyp_prior = emiss_hyp_pr,
-#                              dwell_hyp_prior = dwell_hyp_pr_plnorm,
-#                              show_progress = TRUE,
-#                              mcmc = list(J = 500, burn_in = 350), return_path = TRUE, max_dwell = 50)
-#
-# out_shiftpois <- medHMM_cont_shiftpois(s_data = sim_data$obs,
-#                                        gen = list(m = m, n_dep = n_dep),
-#                                        start_val = c(list(gamma), emiss_distr, list(matrix(dwell_start[,1], ncol = 1))),
-#                                        emiss_hyp_prior = emiss_hyp_pr,
-#                                        dwell_hyp_prior = dwell_hyp_pr_plnorm,
-#                                        show_progress = TRUE,
-#                                        mcmc = list(J = 500, burn_in = 350), return_path = TRUE, max_dwell = 50)
-#
-# # Check results
-# apply(out_pois$dwell_mu_bar[301:500,],2,median)
-# apply(out_shiftpois$dwell_mu_bar[301:500,],2,median)
-# log(c(5,2,10))
-#
-# bind_rows(
-#     # data.frame(state = paste0("mu_d_bar",1:3),
-#     #            value = c(5,2,10),
-#     #            model = "true values"),
-#     exp(out_pois$dwell_mu_bar[101:500,]) |>
-#         as.data.frame() |>
-#         gather(state, value) |>
-#         mutate(model = "Poisson"),
-#     exp(out_shiftpois$dwell_mu_bar[101:500,]) |>
-#         as.data.frame() |>
-#         gather(state, value) |>
-#         mutate(model = "shifted-Poisson")) |>
-#     mutate(truth = case_when(state == "mu_d_bar1" ~ 5,
-#                              state == "mu_d_bar2" ~ 2,
-#                              state == "mu_d_bar3" ~ 10)) |>
-#     ggplot(aes(state, value, fill = model)) +
-#     geom_boxplot() +
-#     geom_hline(aes(yintercept = truth), linetype = "dashed") +
-#     facet_wrap(state~., scales = "free_x") +
-#     theme_minimal()
-
-
-
-
+# Double check FB function
+# Forecast should be informative based on durations
 
 source("R/fb_utils.R")
 source("R/utils.r")
@@ -110,278 +13,668 @@ library(MCMCpack)
 
 library(Rcpp)
 
-cppFunction('List mult_ed_fb_cpp(int m, int n, NumericVector delta, NumericMatrix allprobs, int Mx, IntegerVector Mx2,NumericMatrix gamma, NumericMatrix d, IntegerVector S, IntegerVector S2) {
-     int j, t, i, u, uMax, v, k, Len;
+cppFunction('List mult_ed_fb_cpp(int m, int n, NumericVector delta, NumericMatrix allprobs, int Mx, IntegerVector Mx2, NumericMatrix gamma, NumericMatrix d, IntegerVector S, IntegerVector S2) {
+                int j, t, i, u, uMax, v, k, Len;
 
-     int zer = 0;
-     NumericMatrix d2 = clone(d);
+                int zer = 0;
+                NumericMatrix d2 = clone(d);
 
-     double x;
-     NumericMatrix D2(m,n);
-     NumericVector dSum(m);
+                double x;
+                NumericMatrix D2(m, n);
+                NumericVector dSum(m);
 
-     NumericVector N(n);
-     NumericMatrix Norm(m,n);
-     NumericMatrix Forward(m,n);
-     NumericMatrix StateIn(m,n);
-     double Observ = 0;
+                NumericVector N(n);
+                NumericMatrix Norm(m, n);
+                NumericMatrix Forward(m, n);
+                NumericMatrix StateIn(m, n);
+                double Observ = 0;
 
-     NumericMatrix Backward(m, n);
-     NumericMatrix B_star(m, n+2);
-     IntegerVector VarL(Mx-1);
-     for (i = 1; i < Mx; i++) {
-         VarL(i-1) = Mx - i;
-     }
-     int occNcol = Mx * (n-Mx+1) + sum(VarL);
-     NumericMatrix Occupancy(m, occNcol);
+                NumericMatrix Backward(m, n);
+                NumericMatrix B_star(m, n + 2);
+                IntegerVector VarL(Mx - 1);
+                for (i = 1; i < Mx; i++) {
+                    VarL(i - 1) = Mx - i;
+                }
+                int occNcol = Mx * (n - Mx + 1) + sum(VarL);
+                NumericMatrix Occupancy(m, occNcol);
 
-     IntegerVector lengthID(n);
-     for (i = 0; i < n; i++) {
-         if (i < n-Mx+1) {
-             lengthID(i) = Mx;
-         }
-         else {
-             lengthID(i) = VarL(i - (n-Mx+1));
-         }
-     }
+                IntegerVector lengthID(n);
+                for (i = 0; i < n; i++) {
+                    if (i < n - Mx + 1) {
+                        lengthID(i) = Mx;
+                    } else {
+                        lengthID(i) = VarL(i - (n - Mx + 1));
+                    }
+                }
 
-     IntegerVector endID(n + 2);
-     for (i = 0; i < n+2; i++) {
-         if (i == 0) {
-             endID(i) = 0;
-         }
-         if (i > 0) {
-             if (i < n+1) {
-                 endID(i) =  endID(i-1) + lengthID(i-1);
-             }
-         }
-         if (i == n+1) {
-             endID(i) = endID(i-1);
-         }
-     }
+                IntegerVector endID(n + 2);
+                for (i = 0; i < n + 2; i++) {
+                    if (i == 0) {
+                        endID(i) = 0;
+                    }
+                    if (i > 0) {
+                        if (i < n + 1) {
+                            endID(i) = endID(i - 1) + lengthID(i - 1);
+                        }
+                    }
+                    if (i == n + 1) {
+                        endID(i) = endID(i - 1);
+                    }
+                }
 
-     IntegerVector::const_iterator first = S.begin() + 0;
+                IntegerVector::const_iterator first = S.begin() + 0;
 
-     // forward recursion
-     for (t = 0; t <= n-1; t++) {
+                // forward recursion
+                for (t = 0; t <= n - 1; t++) {
 
-         uMax = std::min(t+1, Mx+1);
+                    uMax = std::min(t + 1, Mx + 1);
 
-         IntegerVector::const_iterator last = S.begin() + (t+1);
-         IntegerVector SSh(first, last);
-         Len = SSh.size();
-         IntegerVector SShrev(Len);
-         for (i = 0; i < Len; i++) {
-             SShrev(i) = SSh(Len-1-i);
-         }
+                    IntegerVector::const_iterator last = S.begin() + (t + 1);
+                    IntegerVector SSh(first, last);
+                    Len = SSh.size();
+                    IntegerVector SShrev(Len);
+                    for (i = 0; i < Len; i++) {
+                        SShrev(i) = SSh(Len - 1 - i);
+                    }
 
-         IntegerVector::const_iterator first2 = SShrev.begin() + 0;
-         IntegerVector::const_iterator last2 = SShrev.begin() + (uMax);
-         IntegerVector SShrev2(first2, last2);
+                    IntegerVector::const_iterator first2 = SShrev.begin() + 0;
+                    IntegerVector::const_iterator last2 = SShrev.begin() + (uMax);
+                    IntegerVector SShrev2(first2, last2);
 
-         d2 = clone(d);
-         for (i = 1; i < uMax; i++) {
-             for (j = 0; j < m; j++) {
-                 d2(j,i) *= SShrev2(i-1);
-             }
-         }
+                    d2 = clone(d);
+                    for (i = 1; i < uMax; i++) {
+                        for (j = 0; j < m; j++) {
+                            d2(j, i) *= SShrev2(i - 1);
+                        }
+                    }
 
-         for (j = 0; j < m; j++) {
-             dSum(j) = 0;
-             for (i = 0; i <= Mx; i++) {
-                 dSum(j) += d2(j,i);
-             }
-         }
+                    for (j = 0; j < m; j++) {
+                        dSum(j) = 0;
+                        for (i = 0; i <= Mx; i++) {
+                            dSum(j) += d2(j, i);
+                        }
+                    }
 
-         for (j = 0; j < m; j++) {
-             if (dSum(j) != 0) {
-                 for (i = 0; i <= Mx; i++) {
-                     d2(j,i) /= dSum(j);
-                 }
-             }
-         }
+                    for (j = 0; j < m; j++) {
+                        if (dSum(j) != 0) {
+                            for (i = 0; i <= Mx; i++) {
+                                d2(j, i) /= dSum(j);
+                            }
+                        }
+                    }
 
-         if (t == n-1) {
-             for (j = 0; j < m; j++) {
-                 for (u = 1; u <= Mx; u++) {
-                     x = 0;
-                     for (v = u; v < Mx + 1; v++)
-                         x += d2(j,v);
-                     D2(j,(u-1)) = x;
-                 }
-                 for (u = Mx + 1; u <= n; u++) {
-                     D2(j,(u-1)) = 0;
-                 }
-             }
-         }
+                    if (t == n - 1) {
+                        for (j = 0; j < m; j++) {
+                            for (u = 1; u <= Mx; u++) {
+                                x = 0;
+                                for (v = u; v < Mx + 1; v++)
+                                    x += d2(j, v);
+                                    D2(j, (u - 1)) = x;
+                            }
+                            for (u = Mx + 1; u <= n; u++) {
+                                D2(j, (u - 1)) = 0;
+                            }
+                        }
+                    }
 
-         N(t) = 0;
-         for (j = 0; j < m; j++) {
-             if (t == 0) {
-                 Norm(j,0) = log(delta(j)) + log(allprobs(j,0));
-             }
-             else
-             {
-                 Norm(j,t) = log(allprobs(j,t)) + log(std::abs(exp(StateIn(j,t)) - exp(Forward(j, (t-1))) + exp(Norm(j, (t-1)))));
-             }
-             N(t) += exp(Norm(j,t));
-         }
-         N(t) = log(N(t));
-         for (j = 0; j < m; j++) {
-             Norm(j,t) -= N(t);
-         }
+                    N(t) = 0;
+                    for (j = 0; j < m; j++) {
+                        if (t == 0) {
+                            // Calculate initial state probabilities at t = 0
+                            if (std::any_of(allprobs(_, 0).cbegin(), allprobs(_, 0).cend(), NumericVector::is_na)) {
+                                Norm(j, 0) = log(delta(j));
+                            } else {
+                                Norm(j, 0) = log(delta(j)) + log(allprobs(j, 0));
+                            }
+                        } else {
+                            // Check for missing values in the row at time t of allprobs
+                            if (std::any_of(allprobs(_, t).cbegin(), allprobs(_, t).cend(), NumericVector::is_na)) {
+                                Norm(j, t) = log(std::abs(exp(StateIn(j, t)) - exp(Forward(j, (t - 1))) + exp(Norm(j, (t - 1)))));
+                            } else {
+                                Norm(j, t) = log(allprobs(j, t)) + log(std::abs(exp(StateIn(j, t)) - exp(Forward(j, (t - 1))) + exp(Norm(j, (t - 1)))));
+                            }
+                        }
+                        N(t) += exp(Norm(j, t));
+                    }
+                    N(t) = log(N(t));
+                    for (j = 0; j < m; j++) {
+                        Norm(j, t) -= N(t);
+                    }
 
-         for (j = 0; j < m; j++) {
-             Forward(j,t) = 0;
-             Observ = 0;
+                    for (j = 0; j < m; j++) {
+                        Forward(j, t) = 0;
+                        Observ = 0;
 
-             if (t < n-1) {
-                 for (u = 1; u <= std::min(t+1, Mx2(j)); u++) {
-                     Observ += log(allprobs(j,t-u+1)) - N(t-u+1);
-                     if (SShrev2(u-1) == 1) {
-                         if (u < t + 1) {
-                             Forward(j,t) += exp(Observ + log(d2(j,u)) + StateIn(j, (t-u+1)));
-                         }
-                         else {
-                             Forward(j,t) += exp(Observ + log(d2(j,t+1)) + log(delta(j)));
-                         }
-                     }
-                 }
-                 Forward(j,t) = log(Forward(j,t));
-             }
-             else {
-                 for (u = 1; u <= std::min(n, Mx2(j)); u++) {
-                     Observ += log(allprobs(j,t-u+1)) - N(t-u+1);
-                     if (SShrev2(u-1) == 1) {
-                         if (u < n) {
-                             Forward(j,n-1) += exp(Observ + log(D2(j,u)) + StateIn(j, n-u));
-                         }
-                         else {
-                             Forward(j,n-1) += exp(Observ + log(D2(j,n)) + log(delta(j)));
-                         }
-                     }
-                 }
-                 Forward(j,n-1) = log(Forward(j,n-1));
-             }
-         }
-         if (t < n-1){
-             for (j = 0; j < m; j++){
-                 StateIn(j, t+1) = 0;
-                 for (i = 0; i < m; i++){
-                     StateIn(j, t+1) += exp(Forward(i,t) + log(gamma(i,j)));
-                 }
-                 StateIn(j,t+1) = log(StateIn(j, t+1));
-             }
-         }
+                        if (t < n - 1) {
+                            for (u = 1; u <= std::min(t + 1, Mx2(j)); u++) {
+                                // Check for missing values in allprobs
+                                if (std::any_of(allprobs(_, t - u + 1).cbegin(), allprobs(_, t - u + 1).cend(), NumericVector::is_na)) {
+                                    if (SShrev2(u - 1) == 1) {
+                                        if (u < t + 1) {
+                                            // Forward(j, t) += exp(log(d2(j, u)) + StateIn(j, (t - u + 1)));
+                                             Forward(j, t) += exp(Observ + log(d2(j, u)) + StateIn(j, (t - u + 1)));
+                                        } else {
+                                            // Forward(j, t) += exp(log(d2(j, t + 1)) + log(delta(j)));
+                                            Forward(j, t) += exp(Observ + log(d2(j, t + 1)) + log(delta(j)));
+                                        }
+                                    }
+                                } else {
+                                    Observ += log(allprobs(j, t - u + 1)) - N(t - u + 1);
+                                    if (SShrev2(u - 1) == 1) {
+                                        if (u < t + 1) {
+                                            Forward(j, t) += exp(Observ + log(d2(j, u)) + StateIn(j, (t - u + 1)));
+                                        } else {
+                                            Forward(j, t) += exp(Observ + log(d2(j, t + 1)) + log(delta(j)));
+                                        }
+                                    }
+                                }
+                            }
+                            Forward(j, t) = log(Forward(j, t));
+                        } else {
+                            for (u = 1; u <= std::min(n, Mx2(j)); u++) {
+                                if (std::any_of(allprobs(_, t - u + 1).cbegin(), allprobs(_, t - u + 1).cend(), NumericVector::is_na)) {
+                                    if (SShrev2(u - 1) == 1) {
+                                        if (u < n) {
+                                            // Forward(j, n - 1) += exp(log(D2(j, u)) + StateIn(j, n - u));
+                                            Forward(j, n - 1) += exp(Observ + log(D2(j, u)) + StateIn(j, n - u));
+                                        } else {
+                                            // Forward(j, n - 1) += exp(log(D2(j, n)) + log(delta(j)));
+                                            Forward(j, n - 1) += exp(Observ + log(D2(j, n)) + log(delta(j)));
+                                        }
+                                    }
+                                } else {
+                                    Observ += log(allprobs(j, t - u + 1)) - N(t - u + 1);
+                                    if (SShrev2(u - 1) == 1) {
+                                        if (u < n) {
+                                            Forward(j, n - 1) += exp(Observ + log(D2(j, u)) + StateIn(j, n - u));
+                                        } else {
+                                            Forward(j, n - 1) += exp(Observ + log(D2(j, n)) + log(delta(j)));
+                                        }
+                                    }
+                                }
+                            }
+                            Forward(j, n - 1) = log(Forward(j, n - 1));
+                        }
+                    }
+                    if (t < n - 1) {
+                        for (j = 0; j < m; j++) {
+                            StateIn(j, t + 1) = 0;
+                            for (i = 0; i < m; i++) {
+                                StateIn(j, t + 1) += exp(Forward(i, t) + log(gamma(i, j)));
+                            }
+                            StateIn(j, t + 1) = log(StateIn(j, t + 1));
+                        }
+                    }
+                }
 
-     }
+                // Backward recursion
 
-     // Backward recursion
+                for (t = n - 1; t >= 0; t--) {
+                    if (S(t) == 1) {
 
-     for (t = n-1; t >= 0; t--) {
-         if (S(t) == 1) {
+                        uMax = std::min(n - t, Mx);
+                        IntegerVector::const_iterator first3 = S2.begin() + t;
+                        IntegerVector::const_iterator last3 = S2.begin() + (n);
+                        IntegerVector SShB(first3, last3);
 
-             uMax = std::min(n-t, Mx);
-             IntegerVector::const_iterator first3 = S2.begin() + t;
-             IntegerVector::const_iterator last3 = S2.begin() + (n);
-             IntegerVector SShB(first3, last3);
+                        IntegerVector::const_iterator first4 = SShB.begin() + 0;
+                        IntegerVector::const_iterator last4 = SShB.begin() + (uMax);
+                        IntegerVector SShB2(first4, last4);
 
-             IntegerVector::const_iterator first4 = SShB.begin() + 0;
-             IntegerVector::const_iterator last4 = SShB.begin() + (uMax);
-             IntegerVector SShB2(first4, last4);
+                        d2 = clone(d);
+                        for (i = 1; i < uMax + 1; i++) {
+                            for (j = 0; j < m; j++) {
+                                d2(j, i) *= SShB2(i - 1);
+                            }
+                        }
 
-             d2 = clone(d);
-             for (i = 1; i < uMax+1; i++) {
-                 for (j = 0; j < m; j++) {
-                     d2(j,i) *= SShB2(i-1);
-                 }
-             }
+                        for (j = 0; j < m; j++) {
+                            dSum(j) = 0;
+                            for (i = 0; i <= Mx; i++) {
+                                dSum(j) += d2(j, i);
+                            }
+                        }
 
-             for (j = 0; j < m; j++) {
-                 dSum(j) = 0;
-                 for (i = 0; i <= Mx; i++) {
-                     dSum(j) += d2(j,i);
-                 }
-             }
+                        for (j = 0; j < m; j++) {
+                            if (dSum(j) != 0) {
+                                for (i = 0; i <= Mx; i++) {
+                                    d2(j, i) /= dSum(j);
+                                }
+                            }
+                        }
 
-             for (j = 0; j < m; j++) {
-                 if (dSum(j) != 0) {
-                     for (i = 0; i <= Mx; i++) {
-                         d2(j,i) /= dSum(j);
-                     }
-                 }
-             }
+                        for (j = 0; j < m; j++) {
+                            for (u = 1; u <= Mx; u++) {
+                                x = 0;
+                                for (v = u; v < Mx + 1; v++)
+                                    x += d2(j, v);
+                                    D2(j, (u - 1)) = x;
+                            }
+                            for (u = Mx + 1; u <= n; u++) {
+                                D2(j, (u - 1)) = 0;
+                            }
+                        }
 
-             for (j = 0; j < m; j++) {
-                 for (u = 1; u <= Mx; u++) {
-                     x = 0;
-                     for (v = u; v < Mx + 1; v++)
-                         x += d2(j,v);
-                     D2(j,(u-1)) = x;
-                 }
-                 for (u = Mx + 1; u <= n; u++) {
-                     D2(j,(u-1)) = 0;
-                 }
-             }
+                        for (j = 0; j < m; j++) {
+                            B_star(j, t) = 0;
+                            Observ = 0;
+                            for (u = 1; u <= std::min(n - t, Mx2(j)); u++) {
+                                if (std::any_of(allprobs(_, t + u - 1).cbegin(), allprobs(_, t + u - 1).cend(), NumericVector::is_na)) {
+                                    if (SShB2(u - 1) == 1) {
+                                        if (u < n - t) {
+                                            // Occupancy(j, endID(t) + (u - 1)) = exp(Backward(j, t + u) + log(d2(j, u)));
+                                            Occupancy(j, endID(t) + (u - 1)) = exp(Backward(j, t + u) + Observ + log(d2(j, u)));
+                                        } else {
+                                            // Occupancy(j, endID(t) + (u - 1)) = exp(log(D2(j, n - 1 - t)));
+                                            Occupancy(j, endID(t) + (u - 1)) = exp(Observ + log(D2(j, n - 1 - t)));
+                                        }
+                                        B_star(j, t) += Occupancy(j, endID(t) + (u - 1));
+                                    }
+                                } else {
+                                    Observ += log(allprobs(j, t + u - 1)) - N(t + u - 1);
+                                    if (SShB2(u - 1) == 1) {
+                                        if (u < n - t) {
+                                            Occupancy(j, endID(t) + (u - 1)) = exp(Backward(j, t + u) + Observ + log(d2(j, u)));
+                                        } else {
+                                            Occupancy(j, endID(t) + (u - 1)) = exp(Observ + log(D2(j, n - 1 - t)));
+                                        }
+                                        B_star(j, t) += Occupancy(j, endID(t) + (u - 1));
+                                    }
+                                }
+                            }
+                            B_star(j, t) = log(B_star(j, t));
+                        }
+                        for (j = 0; j < m; j++) {
+                            Backward(j, t) = 0;
+                            for (k = 0; k < m; k++) {
+                                Backward(j, t) += exp(B_star(k, t) + log(gamma(j, k)));
+                            }
+                            Backward(j, t) = log(Backward(j, t));
+                        }
+                    }
+                }
 
-             for (j = 0; j < m; j++) {
-                 B_star(j,t) = 0;
-                 Observ = 0;
-                 for (u = 1; u <= std::min(n - t, Mx2(j)); u++) {
-                     Observ += log(allprobs(j,t+u-1)) - N(t+u-1);
-                     if (SShB2(u-1) == 1) {
-                         if (u < n-t) {
-                             Occupancy(j, endID(t) + (u-1)) = exp(Backward(j,t+u) + Observ + log(d2(j,u)));
-                         }
-                         else {
-                             Occupancy(j, endID(t) + (u-1)) = exp(Observ + log(D2(j,n-1-t)));
-                         }
-                         B_star(j,t) += Occupancy(j, endID(t) + (u-1));
-                     }
-                 }
-                 B_star(j,t) = log(B_star(j,t));
-             }
-             for (j = 0; j < m; j++) {
-                 Backward(j,t) = 0;
-                 for (k = 0; k < m; k++) {
-                     Backward(j,t) += exp(B_star(k,t) + log(gamma(j,k)));
-                 }
-                 Backward(j,t) = log(Backward(j,t));
-             }
-         }
-     }
+                List H(n);
+                for (i = 0; i < n; i++) {
+                    if (S(i) == 0) {
+                        H(i) = zer;
+                    } else {
+                        NumericMatrix foo(m, lengthID(i));
+                        for (k = 0; k < lengthID(i); k++) {
+                            foo(_, k) = Occupancy(_, k + endID(i));
+                        }
+                        H(i) = foo;
+                    }
+                }
 
-     List H(n);
-     for (i = 0; i < n; i++) {
-         if (S(i) == 0) {
-             H(i) = zer;
-         }
-         else {
-             NumericMatrix foo(m,lengthID(i));
-             for (k = 0; k < lengthID(i); k++) {
-                 foo(_,k) = Occupancy(_, k + endID(i));
-             }
-             H(i) = foo;
-         }
-     }
-
-     return List::create(N, B_star, H);
- }')
+                return List::create(N, B_star, H);
+            }
+            ')
 
 
+cppFunction("
+List mult_ed_fb_cpp(int m, int n, NumericVector delta, NumericMatrix allprobs, int Mx, IntegerVector Mx2, NumericMatrix gamma, NumericMatrix d, IntegerVector S, IntegerVector S2) {
+    int j, t, i, u, uMax, v, k, Len;
 
-load("/Users/a6159737/Documents/Utrecht University/PhD/Collaborations/Gabriel/eeg_data/tests/tests.RData")
+    int zer = 0;
+    NumericMatrix d2 = clone(d);
 
-for(i in 1:m){
-    start_gamma[i,i] <- 0
-    start_gamma[i,] <- start_gamma[i,]/sum(start_gamma[i,])
-}
+    double x;
+    NumericMatrix D2(m, n);
+    NumericVector dSum(m);
 
-s_data = train
+    NumericVector N(n);
+    NumericMatrix Norm(m, n);
+    NumericMatrix Forward(m, n);
+    NumericMatrix StateIn(m, n);
+    double Observ = 0;
+
+    NumericMatrix Backward(m, n);
+    NumericMatrix B_star(m, n + 2);
+    IntegerVector VarL(Mx - 1);
+    for (i = 1; i < Mx; i++) {
+        VarL(i - 1) = Mx - i;
+    }
+    int occNcol = Mx * (n - Mx + 1) + sum(VarL);
+    NumericMatrix Occupancy(m, occNcol);
+
+    IntegerVector lengthID(n);
+    for (i = 0; i < n; i++) {
+        if (i < n - Mx + 1) {
+            lengthID(i) = Mx;
+        } else {
+            lengthID(i) = VarL(i - (n - Mx + 1));
+        }
+    }
+
+    IntegerVector endID(n + 2);
+    for (i = 0; i < n + 2; i++) {
+        if (i == 0) {
+            endID(i) = 0;
+        }
+        if (i > 0) {
+            if (i < n + 1) {
+                endID(i) = endID(i - 1) + lengthID(i - 1);
+            }
+        }
+        if (i == n + 1) {
+            endID(i) = endID(i - 1);
+        }
+    }
+
+    IntegerVector::const_iterator first = S.begin() + 0;
+
+    // forward recursion
+    for (t = 0; t <= n - 1; t++) {
+
+        uMax = std::min(t + 1, Mx + 1);
+
+        IntegerVector::const_iterator last = S.begin() + (t + 1);
+        IntegerVector SSh(first, last);
+        Len = SSh.size();
+        IntegerVector SShrev(Len);
+        for (i = 0; i < Len; i++) {
+            SShrev(i) = SSh(Len - 1 - i);
+        }
+
+        IntegerVector::const_iterator first2 = SShrev.begin() + 0;
+        IntegerVector::const_iterator last2 = SShrev.begin() + (uMax);
+        IntegerVector SShrev2(first2, last2);
+
+        d2 = clone(d);
+        for (i = 1; i < uMax; i++) {
+            for (j = 0; j < m; j++) {
+                d2(j, i) *= SShrev2(i - 1);
+            }
+        }
+
+        for (j = 0; j < m; j++) {
+            dSum(j) = 0;
+            for (i = 0; i <= Mx; i++) {
+                dSum(j) += d2(j, i);
+            }
+        }
+
+        for (j = 0; j < m; j++) {
+            if (dSum(j) != 0) {
+                for (i = 0; i <= Mx; i++) {
+                    d2(j, i) /= dSum(j);
+                }
+            }
+        }
+
+        if (t == n - 1) {
+            for (j = 0; j < m; j++) {
+                for (u = 1; u <= Mx; u++) {
+                    x = 0;
+                    for (v = u; v < Mx + 1; v++)
+                        x += d2(j, v);
+                    D2(j, (u - 1)) = x;
+                }
+                for (u = Mx + 1; u <= n; u++) {
+                    D2(j, (u - 1)) = 0;
+                }
+            }
+        }
+
+        N(t) = 0;
+        for (j = 0; j < m; j++) {
+            if (t == 0) {
+                // Calculate initial state probabilities at t = 0
+                if (std::any_of(allprobs(_, 0).cbegin(), allprobs(_, 0).cend(), NumericVector::is_na)) {
+                    Norm(j, 0) = log(delta(j));
+                } else {
+                    Norm(j, 0) = log(delta(j)) + log(allprobs(j, 0));
+                }
+            } else {
+                // Check for missing values in the row at time t of allprobs
+                if (std::any_of(allprobs(_, t).cbegin(), allprobs(_, t).cend(), NumericVector::is_na)) {
+                    Norm(j, t) = log(std::abs(exp(StateIn(j, t)) - exp(Forward(j, (t - 1))) + exp(Norm(j, (t - 1)))));
+                } else {
+                    Norm(j, t) = log(allprobs(j, t)) + log(std::abs(exp(StateIn(j, t)) - exp(Forward(j, (t - 1))) + exp(Norm(j, (t - 1)))));
+                }
+            }
+            N(t) += exp(Norm(j, t));
+        }
+        N(t) = log(N(t));
+        for (j = 0; j < m; j++) {
+            Norm(j, t) -= N(t);
+        }
+
+        for (j = 0; j < m; j++) {
+            Forward(j, t) = 0;
+            Observ = 0;
+
+            if (t < n - 1) {
+                for (u = 1; u <= std::min(t + 1, Mx2(j)); u++) {
+                    // Check for missing values in allprobs
+                    if (std::any_of(allprobs(_, t - u + 1).cbegin(), allprobs(_, t - u + 1).cend(), NumericVector::is_na)) {
+                        if (SShrev2(u - 1) == 1) {
+                            if (u < t + 1) {
+                                Forward(j, t) += exp(Observ + log(d2(j, u)) + StateIn(j, (t - u + 1)));
+                            } else {
+                                Forward(j, t) += exp(Observ + log(d2(j, t + 1)) + log(delta(j)));
+                            }
+                        }
+                    } else {
+                        Observ += log(allprobs(j, t - u + 1)) - N(t - u + 1);
+                        if (SShrev2(u - 1) == 1) {
+                            if (u < t + 1) {
+                                Forward(j, t) += exp(Observ + log(d2(j, u)) + StateIn(j, (t - u + 1)));
+                            } else {
+                                Forward(j, t) += exp(Observ + log(d2(j, t + 1)) + log(delta(j)));
+                            }
+                        }
+                    }
+                }
+                Forward(j, t) = log(Forward(j, t));
+            } else {
+                for (u = 1; u <= std::min(n, Mx2(j)); u++) {
+                    if (std::any_of(allprobs(_, t - u + 1).cbegin(), allprobs(_, t - u + 1).cend(), NumericVector::is_na)) {
+                        if (SShrev2(u - 1) == 1) {
+                            if (u < n) {
+                                Forward(j, n - 1) += exp(Observ + log(D2(j, u)) + StateIn(j, n - u));
+                            } else {
+                                Forward(j, n - 1) += exp(Observ + log(D2(j, n)) + log(delta(j)));
+                            }
+                        }
+                    } else {
+                        Observ += log(allprobs(j, t - u + 1)) - N(t - u + 1);
+                        if (SShrev2(u - 1) == 1) {
+                            if (u < n) {
+                                Forward(j, n - 1) += exp(Observ + log(D2(j, u)) + StateIn(j, n - u));
+                            } else {
+                                Forward(j, n - 1) += exp(Observ + log(D2(j, n)) + log(delta(j)));
+                            }
+                        }
+                    }
+                }
+                Forward(j, n - 1) = log(Forward(j, n - 1));
+            }
+        }
+        if (t < n - 1) {
+            for (j = 0; j < m; j++) {
+                StateIn(j, t + 1) = 0;
+                for (i = 0; i < m; i++) {
+                    StateIn(j, t + 1) += exp(Forward(i, t) + log(gamma(i, j)));
+                }
+                StateIn(j, t + 1) = log(StateIn(j, t + 1));
+            }
+        }
+    }
+
+    // Backward recursion
+
+    for (t = n - 1; t >= 0; t--) {
+        if (S(t) == 1) {
+
+            uMax = std::min(n - t, Mx);
+            IntegerVector::const_iterator first3 = S2.begin() + t;
+            IntegerVector::const_iterator last3 = S2.begin() + (n);
+            IntegerVector SShB(first3, last3);
+
+            IntegerVector::const_iterator first4 = SShB.begin() + 0;
+            IntegerVector::const_iterator last4 = SShB.begin() + (uMax);
+            IntegerVector SShB2(first4, last4);
+
+            d2 = clone(d);
+            for (i = 1; i < uMax + 1; i++) {
+                for (j = 0; j < m; j++) {
+                    d2(j, i) *= SShB2(i - 1);
+                }
+            }
+
+            for (j = 0; j < m; j++) {
+                dSum(j) = 0;
+                for (i = 0; i <= Mx; i++) {
+                    dSum(j) += d2(j, i);
+                }
+            }
+
+            for (j = 0; j < m; j++) {
+                if (dSum(j) != 0) {
+                    for (i = 0; i <= Mx; i++) {
+                        d2(j, i) /= dSum(j);
+                    }
+                }
+            }
+
+            for (j = 0; j < m; j++) {
+                for (u = 1; u <= Mx; u++) {
+                    x = 0;
+                    for (v = u; v < Mx + 1; v++)
+                        x += d2(j, v);
+                    D2(j, (u - 1)) = x;
+                }
+                for (u = Mx + 1; u <= n; u++) {
+                    D2(j, (u - 1)) = 0;
+                }
+            }
+
+            for (j = 0; j < m; j++) {
+                B_star(j, t) = 0;
+                Observ = 0;
+                for (u = 1; u <= std::min(n - t, Mx2(j)); u++) {
+                    if (std::any_of(allprobs(_, t + u - 1).cbegin(), allprobs(_, t + u - 1).cend(), NumericVector::is_na)) {
+                        if (SShB2(u - 1) == 1) {
+                            if (u < n - t) {
+                                Occupancy(j, endID(t) + (u - 1)) = exp(Backward(j, t + u) + Observ + log(d2(j, u)));
+                            } else {
+                                Occupancy(j, endID(t) + (u - 1)) = exp(Observ + log(D2(j, n - 1 - t)));
+                            }
+                            B_star(j, t) += Occupancy(j, endID(t) + (u - 1));
+                        }
+                    } else {
+                        Observ += log(allprobs(j, t + u - 1)) - N(t + u - 1);
+                        if (SShB2(u - 1) == 1) {
+                            if (u < n - t) {
+                                Occupancy(j, endID(t) + (u - 1)) = exp(Backward(j, t + u) + Observ + log(d2(j, u)));
+                            } else {
+                                Occupancy(j, endID(t) + (u - 1)) = exp(Observ + log(D2(j, n - 1 - t)));
+                            }
+                            B_star(j, t) += Occupancy(j, endID(t) + (u - 1));
+                        }
+                    }
+                }
+                B_star(j, t) = log(B_star(j, t));
+            }
+            for (j = 0; j < m; j++) {
+                Backward(j, t) = 0;
+                for (k = 0; k < m; k++) {
+                    Backward(j, t) += exp(B_star(k, t) + log(gamma(j, k)));
+                }
+                Backward(j, t) = log(Backward(j, t));
+            }
+        }
+    }
+
+    List H(n);
+    for (i = 0; i < n; i++) {
+        if (S(i) == 0) {
+            H(i) = zer;
+        } else {
+            NumericMatrix foo(m, lengthID(i));
+            for (k = 0; k < lengthID(i); k++) {
+                foo(_, k) = Occupancy(_, k + endID(i));
+            }
+            H(i) = foo;
+        }
+    }
+
+    return List::create(N, B_star, H);
+}")
+
+
+# load("/Users/a6159737/Documents/Utrecht University/PhD/Collaborations/Gabriel/eeg_data/tests/tests.RData")
+#
+# for(i in 1:m){
+#     start_gamma[i,i] <- 0
+#     start_gamma[i,] <- start_gamma[i,]/sum(start_gamma[i,])
+# }
+
+
+
+library(tidyverse)
+library(mHMMbayes)
+
+## 3 states
+n_t <- 500
+n <- 20
+m <- 3
+n_dep <- 2
+
+
+gamma <- matrix(c(0, 0.7, 0.3,
+                  0.5, 0, 0.5,
+                  0.6, 0.4, 0), nrow = m, ncol = m, byrow = TRUE)
+
+emiss_distr <- list(matrix(c(10,2,
+                             50,2,
+                             2,2), nrow = m, ncol = 2, byrow = TRUE),
+                    matrix(c(-5,2,
+                             -20,2,
+                             5,2), nrow = m, ncol = 2, byrow = TRUE))
+
+dwell_distr <- dwell_start <- matrix(log(c(5,1,
+                                           2,1,
+                                           20,1)), nrow = m, ncol = 2, byrow = TRUE)
+
+# Simulate data
+set.seed(42)
+sim_data_pois <- sim_data <- medHMM::sim_medHMM(n_t, n, data_distr = 'continuous', m, n_dep = n_dep,
+                                                dwell_distr = matrix(dwell_distr[,1], ncol = 1), dwell_type = 'poisson',
+                                                start_state = NULL, q_emiss = NULL, gamma = gamma, emiss_distr = emiss_distr, xx_vec = NULL, beta = NULL,
+                                                var_gamma = 0.1, var_emiss = c(0.1,0.1), var_dwell = 0.1, return_ind_par = TRUE)
+
+
+# Specify hyper-prior for the continuous emission distribution
+emiss_hyp_pr <- list(
+    emiss_mu0 = list(matrix(c(10,50,2), nrow = 1),
+                     matrix(c(-5, -20, 5), nrow = 1)),
+    emiss_K0  = list(1, 1),
+    emiss_nu  = list(1, 1),
+    emiss_V   = list(rep(10, m), rep(10, m)),
+    emiss_a0  = list(rep(0.01, m), rep(0.01, m)),
+    emiss_b0  = list(rep(0.01, m), rep(0.01, m))
+)
+
+## Define hyper-priors
+dwell_hyp_pr_plnorm <- list(
+    dwell_mu0 = matrix(log(c(5,2,20)), nrow = 1, ncol = 3), # nrow = number of covariates + 1; ncol = number of hidden states
+    dwell_K0  = c(1),
+    dwell_nu  = c(1),
+    dwell_V   = rep(0.1, m)
+)
+
+
+set.seed(42)
+sim_data$obs[sample(1:nrow(sim_data$obs), nrow(sim_data$obs)*0.1),-1] <- NA
+
+s_data = sim_data$obs
 gen = list(m = m, n_dep = n_dep)
-start_val = c(list(start_gamma), start_emiss, list(start_dwell))
+start_val = c(list(gamma), emiss_distr, list(exp(dwell_distr)))
 emiss_hyp_prior = emiss_hyp_pr
-dwell_hyp_prior = dwell_hyp_pr_plnorm
+dwell_hyp_prior = dwell_hyp_pr
 show_progress = TRUE
 shift = NULL
 mcmc = list(J = 500, burn_in = 250)
@@ -392,8 +685,33 @@ dwell_sampler = NULL
 return_path = TRUE
 max_dwell = 50
 
+library(medHMM)
 
+out <- medHMM::medHMM_cont_shiftpois(s_data = sim_data$obs,
+                                     gen = list(m = m, n_dep = n_dep),
+                                     start_val = c(list(gamma), emiss_distr, list(dwell_distr)),
+                                     emiss_hyp_prior = emiss_hyp_pr,
+                                     dwell_hyp_prior = dwell_hyp_pr_plnorm,
+                                     show_progress = TRUE,
+                                     shift = NULL,
+                                     mcmc = list(J = 500, burn_in = 250),
+                                     gamma_hyp_prior = NULL,
+                                     xx = NULL,
+                                     gamma_sampler = NULL,
+                                     dwell_sampler = NULL,
+                                     return_path = TRUE,
+                                     max_dwell = 50)
 
+out$gamma_prob_bar
+exp(out$dwell_mu_bar) %>%
+    as.data.frame() %>%
+    mutate(iter = row_number()) %>%
+    gather(state, value, -iter) %>%
+    ggplot(aes(x=iter, y = value)) +
+    geom_line() +
+    facet_wrap(state~.)
+
+apply(exp(out$dwell_mu_bar)[251:500,],2,median)
 
 
 medHMM_cont_shiftpois <- function(s_data, gen, xx = NULL, start_val,
@@ -433,8 +751,11 @@ medHMM_cont_shiftpois <- function(s_data, gen, xx = NULL, start_val,
         switched 			<- rep(0, n)
         switched[1] 		<- 1
         for (t in 2:n) {
-            if(any(subj_data[[s]]$y[t,] != subj_data[[s]]$y[t-1,])) {
-                switched[t] <- 1}
+            if(!any(is.na(subj_data[[s]]$y[t,]) | is.na(subj_data[[s]]$y[t-1,]))){
+                if(any(subj_data[[s]]$y[t,] != subj_data[[s]]$y[t-1,])) {
+                    switched[t] <- 1
+                }
+            }
         }
         switched2 		<- c(switched[-1],1)
 
@@ -578,10 +899,10 @@ medHMM_cont_shiftpois <- function(s_data, gen, xx = NULL, start_val,
     # alpha.tau20		<- dwell_hyp_prior$alpha.tau20
     # beta.tau20		<- dwell_hyp_prior$beta.tau20
 
-    # # Initialize emiss hyper prior
-    # if(missing(dwell_hyp_prior)){
-    #     stop("The hyper-prior values for the Poisson-lognormal state dwell distribution denoted by dwell_hyp_prior needs to be specified")
-    # }
+    # Initialize emiss hyper prior
+    if(missing(dwell_hyp_prior)){
+        stop("The hyper-prior values for the Poisson-lognormal state dwell distribution denoted by dwell_hyp_prior needs to be specified")
+    }
 
     # emiss_mu0: for each dependent variable, emiss_mu0 is a list, with one element for each state.
     # Each element is a matrix, with number of rows equal to the number of covariates (with the intercept being one cov),
@@ -966,7 +1287,7 @@ medHMM_cont_shiftpois <- function(s_data, gen, xx = NULL, start_val,
                 # Idea: pre-compute emissions likelihood to pass to FBalgC() here:
 
                 # Run forward backward algorithm in C++, using the runlength distribution d for each state ================================================================
-                # d 	<- get.d.pois(run.p = list(lambda = dwell_c_mu[[i]][s,1]), Mx = subj_data[[s]]$Mx, m = m) # Check
+                # d 	<- get.d.pois(run.p = list(lambda = t(dwell[[s]])), Mx = subj_data[[s]]$Mx, m = m) # Check
                 d 	<- get.d.shiftpois(run.p = list(lambda = t(dwell[[s]]), shift = shift), Mx = subj_data[[s]]$Mx, m = m)
 
                 delta[[s]] <- get_delta(gamma[[s]], m)
@@ -982,8 +1303,10 @@ medHMM_cont_shiftpois <- function(s_data, gen, xx = NULL, start_val,
                     Mx2 = subj_data[[s]]$Mx2,
                     gamma = gamma[[s]],
                     d = d,
-                    S2 = subj_data[[s]]$switch2,
-                    S = subj_data[[s]]$switch,
+                    # S2 = subj_data[[s]]$switch2,
+                    # S = subj_data[[s]]$switch,
+                    S2 = rep(1,subj_data[[s]]$n),
+                    S = rep(1,subj_data[[s]]$n),
                     delta = delta[[s]]
                 )
 
@@ -1033,7 +1356,6 @@ medHMM_cont_shiftpois <- function(s_data, gen, xx = NULL, start_val,
                 trans_pooled			<- factor(c(unlist(sapply(trans, "[[", i)), c(1:m)[-i]))
                 trans_pooled            <- factor(trans_pooled, levels = paste(c(1:m)[-i]))
                 trans_pooled            <- as.numeric(trans_pooled)
-                trans_pooled            <- trans_pooled[!is.na(trans_pooled)]
                 gamma_mle_pooled		<- optim(gamma_int_mle0, llmnl_int, Obs = trans_pooled,
                                            method = "BFGS", hessian = FALSE,
                                            control = list(fnscale = -1))
@@ -1048,7 +1370,6 @@ medHMM_cont_shiftpois <- function(s_data, gen, xx = NULL, start_val,
                     trans_subj          <- factor(c(trans[[s]][[i]], c(1:m)[-i]))
                     trans_subj          <- factor(trans_subj, levels = paste(c(1:m)[-i]))
                     trans_subj          <- as.numeric(trans_subj)
-                    trans_subj          <- trans_subj[!is.na(trans_subj)]
 
                     # subject level, transition matrix ============================================================ Check number of categories in gamma_int_mle_pooled
                     gamma_out			<- optim(gamma_int_mle_pooled[[i]], llmnl_int_frac, Obs = trans_subj,
@@ -1103,7 +1424,6 @@ medHMM_cont_shiftpois <- function(s_data, gen, xx = NULL, start_val,
                     trans_subj          <- factor(c(trans[[s]][[i]]))
                     trans_subj          <- factor(trans_subj, levels = paste(c(1:m)[-i]))
                     trans_subj          <- as.numeric(trans_subj)
-                    trans_subj          <- trans_subj[!is.na(trans_subj)]
 
                     # Sample subject values for gamma using RW Metropolis sampler   ---------
                     gamma_candcov_comb 		<- chol2inv(chol(subj_data[[s]]$gamma_mhess[(1 + (i - 1) * (m - 2)):((m - 2) + (i - 1) * (m - 2)), ] + chol2inv(chol(gamma_V_int[[i]]))))
@@ -1321,3 +1641,142 @@ medHMM_cont_shiftpois <- function(s_data, gen, xx = NULL, start_val,
 }
 
 
+
+
+
+
+
+
+
+
+
+###### Example on simulated data
+# Simulating multivariate continuous data with a Poisson-lognormal dwell distribution
+# Define model parameters:
+n_t <- 1000
+n <- 250
+m <- 3
+n_dep <- 2
+
+
+gamma <- matrix(c(0, 0.7, 0.3,
+                  0.5, 0, 0.5,
+                  0.6, 0.4, 0), nrow = m, ncol = m, byrow = TRUE)
+
+emiss_distr <- list(matrix(c(10,2,
+                             50,2,
+                             2,2), nrow = m, ncol = 2, byrow = TRUE),
+                    matrix(c(-5,2,
+                             -20,2,
+                             5,2), nrow = m, ncol = 2, byrow = TRUE))
+
+dwell_distr <- dwell_start <- matrix(log(c(10,
+                                           2,
+                                           20)), nrow = m, ncol = 1, byrow = TRUE)
+
+# Simulating multivariate continuous data with a poisson dwell distribution
+# Define model parameters:
+set.seed(42)
+sim_data <- sim_medHMM(n_t, n, data_distr = 'continuous', m, n_dep = n_dep,
+                       dwell_distr = dwell_distr, dwell_type = 'poisson',
+                       start_state = NULL, q_emiss = NULL, gamma = gamma, emiss_distr = emiss_distr, xx_vec = NULL, beta = NULL,
+                       var_gamma = 0.1, var_emiss = c(1,1), var_dwell = 0.0001, return_ind_par = TRUE)
+
+dwell_distr <- dwell_start <- matrix(log(c(11,
+                                           3,
+                                           20)), nrow = m, ncol = 1, byrow = TRUE)
+
+# Specify hyper-prior for the continuous emission distribution
+emiss_hyp_pr <- list(
+    emiss_mu0 = list(matrix(c(10,50,2), nrow = 1),
+                     matrix(c(-5, -20, 5), nrow = 1)),
+    emiss_K0  = list(1, 1),
+    emiss_nu  = list(1, 1),
+    emiss_V   = list(rep(10, m), rep(10, m)),
+    emiss_a0  = list(rep(0.01, m), rep(0.01, m)),
+    emiss_b0  = list(rep(0.01, m), rep(0.01, m))
+)
+
+## Define dwell hyper-priors
+dwell_hyp_pr <- list(
+    dwell_mu0 = matrix(log(c(10,
+                             2,
+                             20)), nrow = 1, ncol = 3), # nrow = number of covariates + 1; ncol = number of hidden states
+    dwell_K0  = c(1),
+    dwell_nu  = c(1),
+    dwell_V   = rep(0.1, m)
+)
+
+# Train the medHMM:
+out_pois <- medHMM_cont_shiftpois(s_data = sim_data$obs,
+                                  gen = list(m = m, n_dep = n_dep),
+                                  # start_val = c(list(gamma), emiss_distr, list(exp(dwell_distr))), # Notice exp()
+                                  start_val = c(list(gamma), emiss_distr, list(exp(dwell_distr))), # Notice exp()
+                                  emiss_hyp_prior = emiss_hyp_pr,
+                                  dwell_hyp_prior = dwell_hyp_pr,
+                                  show_progress = TRUE,
+                                  mcmc = list(J = 200, burn_in = 100), return_path = TRUE, max_dwell = 40)
+
+
+library(tidyverse)
+
+out_pois$dwell_mu_bar %>%
+    as.data.frame() %>%
+    mutate(iter = row_number()) %>%
+    gather(state, value, -iter) %>%
+    mutate(value = exp(value)) %>%
+    filter(iter > 100) %>%
+    group_by(state) %>%
+    summarise(median(value))
+
+out_pois$dwell_mu_bar %>%
+    as.data.frame() %>%
+    mutate(iter = row_number()) %>%
+    gather(state, value, -iter) %>%
+    mutate(value = exp(value)) %>%
+    ggplot(aes(iter, value)) +
+    geom_line() +
+    facet_wrap(state~., ncol = 1)
+
+out_pois$dwell_varmu_bar %>%
+    as.data.frame() %>%
+    mutate(iter = row_number()) %>%
+    gather(state, value, -iter) %>%
+    ggplot(aes(iter, value)) +
+    geom_line() +
+    facet_wrap(state~., ncol = 1)
+
+out_pois$gamma_prob_bar %>%
+    as.data.frame() %>%
+    mutate(iter = row_number()) %>%
+    gather(state, value, -iter) %>%
+    ggplot(aes(iter, value)) +
+    geom_line() +
+    facet_wrap(state~., ncol = 3)
+
+out_pois$gamma_V_int_bar %>%
+    as.data.frame() %>%
+    mutate(iter = row_number()) %>%
+    filter(iter > 1) %>%
+    gather(state, value, -iter) %>%
+    ggplot(aes(iter, value)) +
+    geom_line() +
+    facet_wrap(state~., ncol = 1)
+
+out_pois$emiss_mu_bar[[1]] %>%
+    as.data.frame() %>%
+    mutate(iter = row_number()) %>%
+    # filter(iter > 1) %>%
+    gather(state, value, -iter) %>%
+    ggplot(aes(iter, value)) +
+    geom_line() +
+    facet_wrap(state~., ncol = 1)
+
+out_pois$emiss_mu_bar[[2]] %>%
+    as.data.frame() %>%
+    mutate(iter = row_number()) %>%
+    # filter(iter > 1) %>%
+    gather(state, value, -iter) %>%
+    ggplot(aes(iter, value)) +
+    geom_line() +
+    facet_wrap(state~., ncol = 1)

@@ -309,7 +309,8 @@ poisLN_RW_once <- function(lambda, Obs, mu_bar1, V_1, scalar, candcov1) {
 #' @keywords internal
 #' get d distribution for Poisson
 get.d.shiftpois <- function(run.p, Mx, m){
-    input.d <-  matrix(rep(0:(Mx-1), m), nrow = m, byrow = TRUE)
+    # input.d <-  matrix(rep(0:(Mx-1), m), nrow = m, byrow = TRUE)
+    input.d <-  matrix(rep(run.p$shift:(Mx-1+run.p$shift), m), nrow = m, byrow = TRUE)
     d <- cbind(rep(0,m), apply(input.d, 2, dshiftpois, lambda = run.p$lambda, shift = run.p$shift, log = FALSE))
     return(d)
 }
