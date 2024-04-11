@@ -302,6 +302,7 @@ sim_medHMM <- function(n_t, n, data_distr = 'continuous', m, n_dep = 1,
                       start_state = NULL, q_emiss = NULL, gamma, emiss_distr,
                       dwell_distr, dwell_type = 'lognormal',
                       xx_vec = NULL, beta = NULL,
+                      shift = 0,
                       var_gamma = 0.1, var_emiss = NULL, var_dwell = NULL, return_ind_par = FALSE){
 
     #############
@@ -528,7 +529,8 @@ sim_medHMM <- function(n_t, n, data_distr = 'continuous', m, n_dep = 1,
                     if (dwell_type == "lognormal") {
                         durat <- round(rlnorm(1, meanlog = max(sub_durat[[j]][states[((j-1) * n_t + t), 2],1],1), sdlog = sqrt(sub_durat[[j]][states[((j-1) * n_t + t), 2],2])),0)
                     } else if (dwell_type == "poisson") {
-                        durat <- round(rpois(1, lambda = max(sub_durat[[j]][states[((j-1) * n_t + t), 2],1],1)),0)
+                        # durat <- round(rpois(1, lambda = max(sub_durat[[j]][states[((j-1) * n_t + t), 2],1],1)),0)
+                        durat <- round(rpois(1, lambda = sub_durat[[j]][states[((j-1) * n_t + t), 2],1])+shift,0)
                     }
 
                     # Paste the state over the min(duration sampled, remaining timesteps)
