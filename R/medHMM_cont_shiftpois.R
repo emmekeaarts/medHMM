@@ -1287,7 +1287,7 @@ medHMM_cont_shiftpois <- function(s_data, gen, xx = NULL, start_val,
                     dwell_candcov_comb <- (subj_data[[s]]$dwell_mhess[i] + dwell_V_mu[[i]]^-1)^-1
                     dwell_rw_out <- shiftpoisLN_RW_once(lambda = dwell_c_mu[[i]][s,1],
                                                    # Obs = c(cond_y[[s]][[i]], round(exp(dwell_mu0_subj_bar), 0)), # Dur instead of cond_y
-                                                   Obs = c(Dur[[s]][-n.Dur[s]][sample_path_state[[s]][-n.Dur[s]] == i], round(exp(dwell_mu0_subj_bar), 0)),
+                                                   Obs = c(Dur[[s]][-n.Dur[s]][sample_path_state[[s]][-n.Dur[s]] == i], max(1,round(exp(dwell_mu0_subj_bar), 0))),
                                                    mu_bar1 = dwell_mu0_subj_bar,
                                                    V_1 = sqrt(dwell_V_mu[[i]]),
                                                    scalar = dwell_scalar,
