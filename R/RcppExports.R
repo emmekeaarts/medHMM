@@ -16,3 +16,13 @@ mult_ed_fb_cpp <- function(m, n, delta, allprobs, Mx, Mx2, gamma, d, S, S2) {
     .Call(`_medHMM_mult_ed_fb_cpp`, m, n, delta, allprobs, Mx, Mx2, gamma, d, S, S2)
 }
 
+#' @keywords internal
+mult_ed_fb_cpp2 <- function(m, n, delta, allprobs, Mx, Mx2, gamma, d, S, S2) {
+    .Call(`_medHMM_mult_ed_fb_cpp2`, m, n, delta, allprobs, Mx, Mx2, gamma, d, S, S2)
+}
+
+#' @keywords internal
+mult_ed_fb_cpp_old <- function(m, n, delta, allprobs, Mx, Mx2, gamma, d, S, S2) {
+    .Call(`_medHMM_mult_ed_fb_cpp_old`, m, n, delta, allprobs, Mx, Mx2, gamma, d, S, S2)
+}
+

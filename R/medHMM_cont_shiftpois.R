@@ -508,8 +508,11 @@ medHMM_cont_shiftpois <- function(s_data, gen, xx = NULL, start_val,
         switched 			<- rep(0, n)
         switched[1] 		<- 1
         for (t in 2:n) {
-            if(any(subj_data[[s]]$y[t,] != subj_data[[s]]$y[t-1,])) {
-                switched[t] <- 1}
+            if(!any(is.na(subj_data[[s]]$y[t,]) | is.na(subj_data[[s]]$y[t-1,]))){
+                if(any(subj_data[[s]]$y[t,] != subj_data[[s]]$y[t-1,])) {
+                    switched[t] <- 1
+                }
+            }
         }
         switched2 		<- c(switched[-1],1)
 
@@ -1057,8 +1060,10 @@ medHMM_cont_shiftpois <- function(s_data, gen, xx = NULL, start_val,
                     Mx2 = subj_data[[s]]$Mx2,
                     gamma = gamma[[s]],
                     d = d,
-                    S2 = subj_data[[s]]$switch2,
-                    S = subj_data[[s]]$switch,
+                    # S2 = subj_data[[s]]$switch2,
+                    # S = subj_data[[s]]$switch,
+                    S2 = rep(1,subj_data[[s]]$n),
+                    S = rep(1,subj_data[[s]]$n),
                     delta = delta[[s]]
                 )
 
@@ -1236,16 +1241,16 @@ medHMM_cont_shiftpois <- function(s_data, gen, xx = NULL, start_val,
                 if(iter <= 2) {
                     dwell_c_mu_bar[[i]] <- log(start_val[[n_dep+2]][i,1])
                 }
-                dwell_mle_pooled[[i]]  <- mean(c(Dur_pooled, max(1, round(exp(dwell_c_mu_bar[[i]][1]),0))))
+                dwell_mle_pooled[[i]]  <- mean(c(Dur_pooled, max(shift, round(exp(dwell_c_mu_bar[[i]][1]),0))))
                 if(dwell_mle_pooled[[i]] == 0){
                     dwell_mle_pooled[[i]] <- 1
                 }
-                dwell_pooled_ll[[i]]	<- llshiftpois(lambda = dwell_mle_pooled[[i]], Obs = c(Dur_pooled, max(1,round(exp(dwell_c_mu_bar[[i]][1]),0))), shift = shift) # Check Dur cond_y pooled?
+                dwell_pooled_ll[[i]]	<- llshiftpois(lambda = dwell_mle_pooled[[i]], Obs = c(Dur_pooled, max(shift, round(exp(dwell_c_mu_bar[[i]][1]),0))), shift = shift) # Check Dur cond_y pooled?
 
                 # subject level, conditional probabilities, seperate for each dependent variable
                 for(s in 1:n_subj){
                     dwell_out	<- optim(log(dwell_mle_pooled[[i]]), llshiftpois_frac_log, Obs = c(Dur[[s]][-n.Dur[s]][sample_path_state[[s]][-n.Dur[s]] == i],
-                                                                                            max(1, round(exp(dwell_c_mu_bar[[i]][1]),0))),
+                                                                                            max(shift, round(exp(dwell_c_mu_bar[[i]][1]),0))),
                                        pooled_likel = dwell_pooled_ll[[i]],
                                        w = dwell_w, wgt = wgt, shift = shift,
                                        method = "BFGS",
@@ -1286,8 +1291,7 @@ medHMM_cont_shiftpois <- function(s_data, gen, xx = NULL, start_val,
                     dwell_mu0_subj_bar <- c(t(dwell_c_mu_bar[[i]]) %*% xx[[2 + n_dep]][s,]) # Update: add xx for dwell time?
                     dwell_candcov_comb <- (subj_data[[s]]$dwell_mhess[i] + dwell_V_mu[[i]]^-1)^-1
                     dwell_rw_out <- shiftpoisLN_RW_once(lambda = dwell_c_mu[[i]][s,1],
-                                                   # Obs = c(cond_y[[s]][[i]], round(exp(dwell_mu0_subj_bar), 0)), # Dur instead of cond_y
-                                                   Obs = c(Dur[[s]][-n.Dur[s]][sample_path_state[[s]][-n.Dur[s]] == i], max(1,round(exp(dwell_mu0_subj_bar), 0))),
+                                                   Obs = c(Dur[[s]][-n.Dur[s]][sample_path_state[[s]][-n.Dur[s]] == i], max(shift, round(exp(dwell_mu0_subj_bar), 0))),
                                                    mu_bar1 = dwell_mu0_subj_bar,
                                                    V_1 = sqrt(dwell_V_mu[[i]]),
                                                    scalar = dwell_scalar,

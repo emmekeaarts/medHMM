@@ -641,6 +641,21 @@ xx = NULL
 gamma_sampler = NULL
 
 
+s_data = sim_data$obs
+shift = 1
+gen = list(m = m, n_dep = n_dep)
+start_val = c(list(gamma), emiss, list(dwell_distr1))
+emiss_hyp_prior = emiss_hyp_pr
+dwell_hyp_prior = dwell_hyp_pr
+show_progress = TRUE
+mcmc = list(J = J, burn_in = burn_in)
+return_path = TRUE
+max_dwell = max_dwell
+gamma_hyp_prior = NULL
+xx = NULL
+gamma_sampler = NULL
+
+
 
 
 medHMM_cont <- function(s_data, gen, xx = NULL, start_val, emiss_hyp_prior, dwell_hyp_prior,
@@ -3032,3 +3047,482 @@ data.frame("state" = rle(x = sim_data$states[,2])$values,
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Preferred parallel library
+library(tidyverse)
+library(mHMMbayes)
+library(medHMM)
+library(simHMM)
+library(pbmcapply)
+library(reshape2)
+library(R.utils)
+library(glue)
+
+path <- "/Users/a6159737/Documents/Utrecht University/PhD/Projects/Simulation studies/medhmm-sim/seb/main_sim/"
+
+# out_list <- dir(paste0(path,"outputs/out_lists"))
+
+# pblapply(dir(paste0(path,"outputs/out_lists")), function(out) readRDS(out))
+
+design <- read_csv(paste0(path,"design.csv")) %>%
+    group_by(job) %>%
+    mutate(inner = row_number())
+
+
+
+
+
+
+
+
+
+
+crit <- design
+
+crit <- crit %>%
+    filter(dur_s == 1, ind_s2 == 25, occ_s2 == 250, dep_s == 1)
+
+crit <- crit[,1:4]
+
+crit <- crit[rep(row.names(crit), each = 1), ] # place 100
+rownames(crit) <- NULL
+crit$rep_n <- 1:1 # place 100
+
+
+
+
+# Simulation arguments
+cores = 1
+J = 4000
+burn_in = 2000
+m = 3
+
+#==================================================================================================#
+#Utils functions
+#Create function to calculate between subject variance
+get_logvar <- function(mu, varmu){
+    logmu = log(mu)
+    log(0.5*exp(-2*logmu)*(exp(2*logmu) + sqrt(4*exp(2*logmu)*varmu+exp(4*logmu))))
+}
+
+
+get_varmu <- function(lambda, logvar){
+    logmu = log(lambda)
+    abs(exp(logvar)-1)*exp(2*logmu+logvar)
+}
+
+# Define scenarios
+#subjects
+# scenario 1 : 25
+# scenario 2 : 50
+# scenario 3 : 250
+# scenario 4 : 500
+n_distr <- list(250, 50, 25)
+
+#time series length
+# scenario 1 : 250
+# scenario 2 : 500
+# scenario 3 : 1000
+n_t_distr <- list(250, 500, 1000)
+
+# dwell time lambdas
+# scenario 1 : 2nd state lambda=10 5% overlap
+# scenario 2 : 2nd state lambda=10 25% overlap
+# scenario 3 : 2nd state lambda=10 50% overlap
+# scenario 4 : equal across states lambda=10
+# scenario 5 : 2nd state lambda=30 5% overlap
+# scenario 6 : 2nd state lambda=30 25% overlap
+# scenario 7 : 2nd state lambda=30 50% overlap
+# scenario 8 : equal across states lambda=30
+# scenario 9 : 2nd state lambda=90 5% overlap
+# scenario 10 : 2nd state lambda=90 25% overlap
+# scenario 11 : 2nd state lambda=90 50% overlap
+# scenario 12 : equal across states lambda=90
+dwell_assumed<-data.frame(mean=c(rep(10,3),rep(30,3),rep(90,3)),
+                          overlap=rep(c("5% overlap","25% overlap","50% overlap"),3),
+                          state1=c(1,4,6,12,19,23,57,70,78),
+                          state2=c(10,10,10,30,30,30,90,90,90),
+                          state3=c(26,19,15,55,44,38,131,113,103))
+
+dwell_distr <- list(
+    matrix(dwell_assumed[1,3:5],ncol = 1),
+    matrix(dwell_assumed[2,3:5],ncol = 1),
+    matrix(dwell_assumed[3,3:5],ncol = 1),
+    matrix(rep(10,3),ncol = 1),
+    matrix(dwell_assumed[4,3:5],ncol = 1),
+    matrix(dwell_assumed[5,3:5],ncol = 1),
+    matrix(dwell_assumed[6,3:5],ncol = 1),
+    matrix(rep(30,3),ncol = 1),
+    matrix(dwell_assumed[7,3:5],ncol = 1),
+    matrix(dwell_assumed[8,3:5],ncol = 1),
+    matrix(dwell_assumed[9,3:5],ncol = 1),
+    matrix(rep(90,3),ncol = 1)
+
+)
+names(dwell_distr)<-rep(c("5% overlap","25% overlap","50% overlap","100% overlap"),3)
+
+# dwell time between subjects logvariance
+# variance between subjects should be equal to the lambda in the second state
+dwell_var_ss_s<-list(get_logvar(mu=dwell_assumed[1,3:5], varmu=10),
+                     get_logvar(mu=dwell_assumed[2,3:5], varmu=10),
+                     get_logvar(mu=dwell_assumed[3,3:5], varmu=10),
+                     get_logvar(mu=rep(10,3), varmu=10),
+                     get_logvar(mu=dwell_assumed[4,3:5], varmu=30),
+                     get_logvar(mu=dwell_assumed[5,3:5], varmu=30),
+                     get_logvar(mu=dwell_assumed[6,3:5], varmu=30),
+                     get_logvar(mu=rep(30,3), varmu=30),
+                     get_logvar(mu=dwell_assumed[7,3:5], varmu=90),
+                     get_logvar(mu=dwell_assumed[8,3:5], varmu=90),
+                     get_logvar(mu=dwell_assumed[8,3:5], varmu=90),
+                     get_logvar(mu=rep(90,3), varmu=90))
+
+
+
+### ??? Placeholder for gamma scenario with varying between states transitions
+### I could find the code I used to calculate the gamma between subjest variance
+### Probably it won't be 0.17
+
+gamma_ss_var<-0.17
+
+
+#emission distribution
+# scenario 1 :  50% overlap variance=30 one variable
+# scenario 2 :  25% overlap variance=30 one variable
+# scenario 3 :  5% overlap variance=30 one variable
+# scenario 4 : 50% overlap variance=30 two different variables
+# scenario 5 : 25% overlap variance=30 two different variables
+# scenario 6 :  5% overlap variance=30 two different variables
+
+emiss_ss_var<-10
+
+
+fty_pct<-c(10,17.38,24.76)
+fty_pct_r<-c(24.76,17.38,10)
+tty_pct<-c(10,22.60,35.2)
+tty_pct_r<-c(35.2,22.60,10)
+f_pct<-c(10,31.47,52.94)
+f_pct_r<-c(52.94,31.47,10)
+overlap_names=c("50% overlap","25% overlap","5% overlap")
+# dependent variable distribution
+dep_univariate<-data.frame(rbind(fty_pct,tty_pct,f_pct),row.names =  overlap_names)
+colnames(dep_univariate)<-c("state1","state2","state3")
+dep_multivariate1<-list(dep_univariate,
+                        dep_univariate)
+alt_uni<-data.frame(rbind(fty_pct_r,tty_pct_r,f_pct_r),row.names = overlap_names)
+colnames(alt_uni)<-c("state1","state2","state3")
+dep_multivariate2<-list(dep_univariate,
+                        alt_uni)
+
+dep_distr<-list(matrix(c(dep_univariate[1,],rep(30,3)),ncol=2),
+                matrix(c(dep_univariate[2,],rep(30,3)),ncol=2),
+                matrix(c(dep_univariate[3,],rep(30,3)),ncol=2),
+                # list(matrix(c(dep_multivariate1[[1]][1,],rep(30,3)),ncol=2),matrix(c(dep_multivariate1[[2]][1,],rep(30,3)),ncol=2)),
+                # list(matrix(c(dep_multivariate1[[1]][2,],rep(30,3)),ncol=2),matrix(c(dep_multivariate1[[2]][2,],rep(30,3)),ncol=2)),
+                # list(matrix(c(dep_multivariate1[[1]][3,],rep(30,3)),ncol=2),matrix(c(dep_multivariate1[[2]][3,],rep(30,3)),ncol=2)),
+                list(matrix(c(dep_multivariate2[[1]][1,],rep(30,3)),ncol=2),matrix(c(dep_multivariate2[[2]][1,],rep(30,3)),ncol=2)),
+                list(matrix(c(dep_multivariate2[[1]][2,],rep(30,3)),ncol=2),matrix(c(dep_multivariate2[[2]][2,],rep(30,3)),ncol=2)),
+                list(matrix(c(dep_multivariate2[[1]][3,],rep(30,3)),ncol=2),matrix(c(dep_multivariate2[[2]][3,],rep(30,3)),ncol=2)))
+
+names(dep_distr)<-1:6
+
+
+
+#==================================================================================================#
+
+## Simulate and fit models
+# start
+# mhmm_and_medhmm_all_cores_result <-pbmcapply::pbmclapply(1:nrow(crit), function(j) {
+
+j = 1
+
+#number of set of mean duration matrices
+dur_s <- crit$dur_s[j]
+#number of scenarios of the number of observations per individual
+ind_s <- crit$ind_s[j]
+n_subj=n_distr[[ind_s]]
+#number of scenarios of the number of observations per individual
+occ_s <-crit$occ_s[j]
+n_t=n_t_distr[[occ_s]]
+#number of dependent variable scenarios
+dep_s<-crit$dep_s[j]
+#number of samples within the same scenario
+sampl <- 1
+#repetition number
+rep_n <- crit$rep_n[j]
+
+if(dep_s<=3){
+    n_dep<-1
+}else{
+    n_dep=2
+}
+
+#=============== MHMM + data simulation ==========================================
+
+#dwell_distr1 is expected dwell time and I calculate the start gamma matrix out of it
+dwell_distr1=matrix(unlist(dwell_distr[[dur_s]]),ncol=1)
+gam_start<-data.frame(expected=dwell_distr1) %>% summarise(gamma=exp(-1/expected)-0.1) %>% summarise(gamma=gamma,rest=(1-gamma)/2)
+
+# new
+gamma_start <- matrix(c(0, 0.7, 0.3,
+                        0.5, 0, 0.5,
+                        0.6, 0.4, 0), nrow = m, ncol = m, byrow = TRUE)
+
+rest <- gam_start$rest*2
+
+gamma_start <- matrix(rep(rest,3), nrow = 3) * gamma_start
+diag(gamma_start) <- gam_start$gamma
+
+
+if(n_dep==1){
+    emiss=matrix(unlist(dep_distr[[dep_s]]), nrow = m, byrow = FALSE)
+    emiss_start=cbind(emiss[,1],emiss[,2]*1.5)
+    emiss<-list(emiss)
+
+}else{
+    emiss=lapply(dep_distr[[dep_s]],function(x){matrix(unlist(x), nrow = m, byrow = FALSE)}  )
+    emiss_start=lapply(emiss, function(x){x[,2]<-x[,2]*1.5
+    cbind(x[,1],x[,2])})
+}
+
+if(dep_s<=3){
+    emiss_hyp_pr <- prior_emiss_cont(
+        gen = list(m = m, n_dep = n_dep),
+        emiss_mu0 = list(matrix(unlist(dep_distr[[dep_s]][,1]), nrow = 1)),
+        emiss_K0  = list(1),
+        emiss_nu  = list(1),
+        emiss_V   = list(rep(10, m)),
+        emiss_a0  = list(rep(0.01, m)),
+        emiss_b0  = list(rep(0.01, m))
+    )
+} else {
+    emiss_hyp_pr <- prior_emiss_cont(
+        gen = list(m = m, n_dep = n_dep),
+        emiss_mu0 = list(matrix(unlist(dep_distr[[dep_s]][[1]][,1]), nrow = 1),
+                         matrix(unlist(dep_distr[[dep_s]][[2]][,1]), nrow = 1)),
+        emiss_K0  = list(1, 1),
+        emiss_nu  = list(1, 1),
+        emiss_V   = list(rep(10, m), rep(10, m)),
+        emiss_a0  = list(rep(0.01, m), rep(0.01, m)),
+        emiss_b0  = list(rep(0.01, m), rep(0.01, m))
+    )
+}
+
+gamma <-matrix(c(0, 0.7, 0.3,
+                 0.5, 0, 0.5,
+                 0.6, 0.4, 0), nrow = m, ncol = m, byrow = TRUE)
+
+dwell_ss_var<-dwell_var_ss_s[[dur_s]]
+
+emiss_ss_var<-rep(10, length(emiss))
+
+# SIMULATE DATA
+
+# sim_data <- mhsmm_sim_shift_pois(n = n_subj,
+#                                  n_t = n_t,
+#                                  m = m,
+#                                  n_dep = n_dep,
+#                                  emiss = emiss,
+#                                  gamma = gamma,
+#                                  gamma_ss_var = gamma_ss_var,
+#                                  emiss_ss_var = emiss_ss_var,
+#                                  dwell_distr = log(dwell_distr1),
+#                                  dwell_ss_var=dwell_ss_var)
+
+sim_data <- sim_medHMM(n_t, n_subj, data_distr = 'continuous', m, n_dep = n_dep,
+                       dwell_distr = log(dwell_distr1), dwell_type = 'poisson', shift = 0,
+                       start_state = NULL, q_emiss = NULL, gamma = gamma, emiss_distr = emiss, xx_vec = NULL, beta = NULL,
+                       var_gamma = gamma_ss_var, var_emiss = emiss_ss_var, var_dwell = as.numeric(dwell_ss_var), return_ind_par = TRUE)
+
+assign(paste0("sim_data_","dur_s_",dur_s,"ind_s_",ind_s,"occ_s_",occ_s,"dep_s_",dep_s), sim_data)
+
+#check simulated data
+colnames(sim_data$states)<-c("subject","state")
+summary_dwell_ss<-sim_data$states %>%as.data.frame() %>%  group_by(subject)%>%
+    summarise(length=rle(state)[[1]],state=rle(state)[[2]])%>%
+    group_by(subject,state) %>%summarise(mean_emp_dwell=mean(length),median_emp_dwell=median(length))
+summary_dwell_ss$subject<-as.factor(summary_dwell_ss$subject)
+summary_dwell_ss$state<-as.factor(summary_dwell_ss$state)
+summary_dwell_ss=as.data.frame(summary_dwell_ss)
+
+ob<-data.frame(sim_data[['obs']])
+colnames(ob)<-c('subject',paste0('dep',1:n_dep))
+dw<-data.frame(sim_data[['states']])
+colnames(dw)<-c('subject','state')
+data=cbind(ob,state=dw$state) %>% mutate(., state=as.factor(state), subject=as.factor(subject))
+
+# MHMM
+mhmm_case_out <- NULL
+
+try({
+
+    mHMM_cont <- NULL
+
+    start_time1 <- Sys.time()
+
+
+    mHMM_cont <- mHMMbayes::mHMM(s_data = sim_data$obs,
+                                 data_distr = 'continuous',
+                                 gen = list(m = m, n_dep = n_dep),
+                                 start_val = c(list(gamma_start), emiss),
+                                 emiss_hyp_prior = emiss_hyp_pr,
+                                 show_progress = TRUE,
+                                 mcmc = list(J = J, burn_in = burn_in),
+                                 return_path = TRUE)
+
+    end_time1 <- Sys.time()
+
+    if(!is.null(mHMM_cont)){
+        stored_map_mhmm<-try(MAP_mHMM(case_out = mHMM_cont, iteration = rep_n, J=J, B = burn_in, m = m))
+        state_decoding<-try(local_decoding(out=mHMM_cont))
+        true_st<-as.data.frame(sim_data$states)
+        mhmm_state_decoding_table<-try(data.frame(subject=true_st[,1],true_state_decoding=true_st[,-1],vit_state_decoding=state_decoding$state))
+    }
+
+    mhmm_case_out<-list(MAP=stored_map_mhmm,state_decoding=mhmm_state_decoding_table,execution_time=end_time1-start_time1)
+    rm(mHMM_cont)
+
+    # saveRDS(mhmm_case_out, paste0("/Users/a6159737/Documents/Utrecht University/PhD/Projects/Simulation studies/medhmm-sim/seb/res/","mhmm_res_","dur_s_",dur_s,"ind_s_",ind_s,"occ_s_",occ_s,"dep_s_",dep_s,"_iter",J,".rds"))
+
+})
+
+#============ MEDHMM ==============================================================
+
+if(dur_s<=4){
+    max_dwell=54 # qpois(0.999, 26*1.5)
+}else if(dur_s<=8){
+    max_dwell=112 # qpois(0.999, 55*1.5)
+}else{
+    max_dwell=241 # qpois(0.999, 131*1.5)
+}
+
+dwell_distr1=matrix(unlist(dwell_distr[[dur_s]]),ncol=1)
+
+dwell_hyp_pr <- list(
+    dwell_mu0 = matrix(log(as.numeric(dwell_distr[[dur_s]])), nrow = 1, ncol = 3),
+    dwell_K0  = c(1),
+    dwell_nu  = c(1),
+    dwell_V   = rep(0.1, m)
+)
+if(n_dep==1){
+    emiss=matrix(unlist(dep_distr[[dep_s]]), nrow = m, byrow = FALSE)
+    emiss_start=cbind(emiss[,1],emiss[,2]*1.5)
+    emiss<-list(emiss)
+
+}else{
+    emiss=lapply(dep_distr[[dep_s]],function(x){matrix(unlist(x), nrow = m, byrow = FALSE)}  )
+    emiss_start=lapply(emiss, function(x){x[,2]<-x[,2]*1.5
+    cbind(x[,1],x[,2])})
+}
+
+if(dep_s<=3){
+    emiss_hyp_pr <- list(
+        emiss_mu0 = list(matrix(unlist(dep_distr[[dep_s]][,1]), nrow = 1)),
+        emiss_K0  = list(1),
+        emiss_nu  = list(1),
+        emiss_V   = list(rep(10, m)),
+        emiss_a0  = list(rep(0.01, m)),
+        emiss_b0  = list(rep(0.01, m))
+    )
+}else{
+    emiss_hyp_pr <- list(
+        emiss_mu0 = list(matrix(unlist(dep_distr[[dep_s]][[1]][,1]), nrow = 1),
+                         matrix(unlist(dep_distr[[dep_s]][[2]][,1]), nrow = 1)),
+        emiss_K0  = list(1, 1),
+        emiss_nu  = list(1, 1),
+        emiss_V   = list(rep(10, m), rep(10, m)),
+        emiss_a0  = list(rep(0.01, m), rep(0.01, m)),
+        emiss_b0  = list(rep(0.01, m), rep(0.01, m))
+    )
+}
+
+medhmm_case_out <- NULL
+
+try({
+
+    medHMM_cont_shiftpois <- NULL
+
+    start_time2 <- Sys.time()
+    medHMM_cont_shiftpois <- try(medHMM_cont_shiftpois(s_data = sim_data$obs,
+                                                       shift = 1,
+                                                       gen = list(m = m, n_dep = n_dep),
+                                                       start_val = c(list(gamma), emiss, list(dwell_distr1)),
+                                                       emiss_hyp_prior = emiss_hyp_pr,
+                                                       dwell_hyp_prior = dwell_hyp_pr,
+                                                       show_progress = TRUE,
+                                                       mcmc = list(J = J, burn_in = burn_in),
+                                                       return_path = TRUE,
+                                                       max_dwell = max_dwell))
+
+    end_time2 <- Sys.time()
+
+
+    if(!is.null(medHMM_cont_shiftpois)){
+        stored_map_medhmm<-try(MAP_medhmm(case_out = medHMM_cont_shiftpois, iteration = rep_n, J=J, B = burn_in, m = m))
+        state_decoding<-try(local_decoding(out=medHMM_cont_shiftpois))
+        true_st<-as.data.frame(sim_data$states)
+        medhmm_state_decoding_table<-try(data.frame(subject=true_st[,1],true_state_decoding=true_st[,-1],vit_state_decoding=state_decoding$state))
+    }
+
+    medhmm_case_out<-list(MAP=stored_map_medhmm,state_decoding=medhmm_state_decoding_table,execution_time=end_time2-start_time2)
+
+    rm(medHMM_cont_shiftpois)
+
+    # saveRDS(medhmm_case_out, paste0("/Users/a6159737/Documents/Utrecht University/PhD/Projects/Simulation studies/medhmm-sim/seb/res/","medhmm_res_","dur_s_",dur_s,"ind_s_",ind_s,"occ_s_",occ_s,"dep_s_",dep_s,"_iter",J,".rds"))
+
+})
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+medHMM_cont_shiftpois(s_data = sim_data$obs,
+                      shift = 1,
+                      gen = list(m = m, n_dep = n_dep),
+                      start_val = c(list(gamma), emiss, list(dwell_distr1)),
+                      emiss_hyp_prior = emiss_hyp_pr,
+                      dwell_hyp_prior = dwell_hyp_pr,
+                      show_progress = TRUE,
+                      mcmc = list(J = J, burn_in = burn_in),
+                      return_path = TRUE,
+                      max_dwell = max_dwell)

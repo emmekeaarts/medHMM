@@ -18,6 +18,7 @@ sim_medHMM(
   dwell_type = "lognormal",
   xx_vec = NULL,
   beta = NULL,
+  shift = 0,
   var_gamma = 0.1,
   var_emiss = NULL,
   var_dwell = NULL,
