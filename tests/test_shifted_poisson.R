@@ -14,307 +14,6 @@ library(MCMCpack)
 library(Rcpp)
 
 
-# cppFunction("List mult_ed_fb_cpp(int m, int n, NumericVector delta, NumericMatrix allprobs, int Mx, IntegerVector Mx2, NumericMatrix gamma, NumericMatrix d, IntegerVector S, IntegerVector S2) {
-#     int j, t, i, u, uMax, v, k, Len;
-#
-#     int zer = 0;
-#     NumericMatrix d2 = clone(d);
-#
-#     double x;
-#     NumericMatrix D2(m, n);
-#     NumericVector dSum(m);
-#
-#     NumericVector N(n);
-#     NumericMatrix Norm(m, n);
-#     NumericMatrix Forward(m, n);
-#     NumericMatrix StateIn(m, n);
-#     double Observ = 0;
-#
-#     NumericMatrix Backward(m, n);
-#     NumericMatrix B_star(m, n + 2);
-#     IntegerVector VarL(Mx - 1);
-#     for (i = 1; i < Mx; i++) {
-#         VarL(i - 1) = Mx - i;
-#     }
-#     int occNcol = Mx * (n - Mx + 1) + sum(VarL);
-#     NumericMatrix Occupancy(m, occNcol);
-#
-#     IntegerVector lengthID(n);
-#     for (i = 0; i < n; i++) {
-#         if (i < n - Mx + 1) {
-#             lengthID(i) = Mx;
-#         } else {
-#             lengthID(i) = VarL(i - (n - Mx + 1));
-#         }
-#     }
-#
-#     IntegerVector endID(n + 2);
-#     for (i = 0; i < n + 2; i++) {
-#         if (i == 0) {
-#             endID(i) = 0;
-#         }
-#         if (i > 0) {
-#             if (i < n + 1) {
-#                 endID(i) = endID(i - 1) + lengthID(i - 1);
-#             }
-#         }
-#         if (i == n + 1) {
-#             endID(i) = endID(i - 1);
-#         }
-#     }
-#
-#     IntegerVector::const_iterator first = S.begin() + 0;
-#
-#     // forward recursion
-#     for (t = 0; t <= n - 1; t++) {
-#
-#         uMax = std::min(t + 1, Mx + 1);
-#
-#         IntegerVector::const_iterator last = S.begin() + (t + 1);
-#         IntegerVector SSh(first, last);
-#         Len = SSh.size();
-#         IntegerVector SShrev(Len);
-#         for (i = 0; i < Len; i++) {
-#             SShrev(i) = SSh(Len - 1 - i);
-#         }
-#
-#         IntegerVector::const_iterator first2 = SShrev.begin() + 0;
-#         IntegerVector::const_iterator last2 = SShrev.begin() + (uMax);
-#         IntegerVector SShrev2(first2, last2);
-#
-#         d2 = clone(d);
-#         for (i = 1; i < uMax; i++) {
-#             for (j = 0; j < m; j++) {
-#                 d2(j, i) *= SShrev2(i - 1);
-#             }
-#         }
-#
-#         for (j = 0; j < m; j++) {
-#             dSum(j) = 0;
-#             for (i = 0; i <= Mx; i++) {
-#                 dSum(j) += d2(j, i);
-#             }
-#         }
-#
-#         for (j = 0; j < m; j++) {
-#             if (dSum(j) != 0) {
-#                 for (i = 0; i <= Mx; i++) {
-#                     d2(j, i) /= dSum(j);
-#                 }
-#             }
-#         }
-#
-#         if (t == n - 1) {
-#             for (j = 0; j < m; j++) {
-#                 for (u = 1; u <= Mx; u++) {
-#                     x = 0;
-#                     for (v = u; v < Mx + 1; v++)
-#                         x += d2(j, v);
-#                     D2(j, (u - 1)) = x;
-#                 }
-#                 for (u = Mx + 1; u <= n; u++) {
-#                     D2(j, (u - 1)) = 0;
-#                 }
-#             }
-#         }
-#
-#         N(t) = 0;
-#         for (j = 0; j < m; j++) {
-#             if (t == 0) {
-#                 // Add support for listwise missing observations
-#                 // Calculate initial state probabilities at t = 0
-#                 if (std::any_of(allprobs(_, 0).cbegin(), allprobs(_, 0).cend(), NumericVector::is_na)) {
-#                     Norm(j, 0) = log(delta(j));
-#                 } else {
-#                     Norm(j, 0) = log(delta(j)) + log(allprobs(j, 0));
-#                 }
-#             } else {
-#                 // Check for missing values in the row at time t of allprobs
-#                 if (std::any_of(allprobs(_, t).cbegin(), allprobs(_, t).cend(), NumericVector::is_na)) {
-#                     Norm(j, t) = log(std::abs(exp(StateIn(j, t)) - exp(Forward(j, (t - 1))) + exp(Norm(j, (t - 1)))));
-#                 } else {
-#                     Norm(j, t) = log(allprobs(j, t)) + log(std::abs(exp(StateIn(j, t)) - exp(Forward(j, (t - 1))) + exp(Norm(j, (t - 1)))));
-#                 }
-#             }
-#             N(t) += exp(Norm(j, t));
-#         }
-#         N(t) = log(N(t));
-#         for (j = 0; j < m; j++) {
-#             Norm(j, t) -= N(t);
-#         }
-#
-#         for (j = 0; j < m; j++) {
-#             Forward(j, t) = 0;
-#             Observ = 0;
-#
-#             if (t < n - 1) {
-#                 for (u = 1; u <= std::min(t + 1, Mx2(j)); u++) {
-#                     // Add support for listwise missing observations
-#                     // Check for missing values in allprobs
-#                     if (std::any_of(allprobs(_, t - u + 1).cbegin(), allprobs(_, t - u + 1).cend(), NumericVector::is_na)) {
-#                         if (SShrev2(u - 1) == 1) {
-#                             if (u < t + 1) {
-#                                 Forward(j, t) += exp(Observ + log(d2(j, u)) + StateIn(j, (t - u + 1)));
-#                             } else {
-#                                 Forward(j, t) += exp(Observ + log(d2(j, t + 1)) + log(delta(j)));
-#                             }
-#                         }
-#                     } else {
-#                         Observ += log(allprobs(j, t - u + 1)) - N(t - u + 1);
-#                         if (SShrev2(u - 1) == 1) {
-#                             if (u < t + 1) {
-#                                 Forward(j, t) += exp(Observ + log(d2(j, u)) + StateIn(j, (t - u + 1)));
-#                             } else {
-#                                 Forward(j, t) += exp(Observ + log(d2(j, t + 1)) + log(delta(j)));
-#                             }
-#                         }
-#                     }
-#                 }
-#                 Forward(j, t) = log(Forward(j, t));
-#             } else {
-#                 for (u = 1; u <= std::min(n, Mx2(j)); u++) {
-#                     // Add support for listwise missing observations
-#                     if (std::any_of(allprobs(_, t - u + 1).cbegin(), allprobs(_, t - u + 1).cend(), NumericVector::is_na)) {
-#                         if (SShrev2(u - 1) == 1) {
-#                             if (u < n) {
-#                                 Forward(j, n - 1) += exp(Observ + log(D2(j, u)) + StateIn(j, n - u));
-#                             } else {
-#                                 Forward(j, n - 1) += exp(Observ + log(D2(j, n)) + log(delta(j)));
-#                             }
-#                         }
-#                     } else {
-#                         Observ += log(allprobs(j, t - u + 1)) - N(t - u + 1);
-#                         if (SShrev2(u - 1) == 1) {
-#                             if (u < n) {
-#                                 Forward(j, n - 1) += exp(Observ + log(D2(j, u)) + StateIn(j, n - u));
-#                             } else {
-#                                 Forward(j, n - 1) += exp(Observ + log(D2(j, n)) + log(delta(j)));
-#                             }
-#                         }
-#                     }
-#                 }
-#                 Forward(j, n - 1) = log(Forward(j, n - 1));
-#             }
-#         }
-#         if (t < n - 1) {
-#             for (j = 0; j < m; j++) {
-#                 StateIn(j, t + 1) = 0;
-#                 for (i = 0; i < m; i++) {
-#                     StateIn(j, t + 1) += exp(Forward(i, t) + log(gamma(i, j)));
-#                 }
-#                 StateIn(j, t + 1) = log(StateIn(j, t + 1));
-#             }
-#         }
-#     }
-#
-#     // Backward recursion
-#
-#     for (t = n - 1; t >= 0; t--) {
-#         if (S(t) == 1) {
-#
-#             uMax = std::min(n - t, Mx);
-#             IntegerVector::const_iterator first3 = S2.begin() + t;
-#             IntegerVector::const_iterator last3 = S2.begin() + (n);
-#             IntegerVector SShB(first3, last3);
-#
-#             IntegerVector::const_iterator first4 = SShB.begin() + 0;
-#             IntegerVector::const_iterator last4 = SShB.begin() + (uMax);
-#             IntegerVector SShB2(first4, last4);
-#
-#             d2 = clone(d);
-#             for (i = 1; i < uMax + 1; i++) {
-#                 for (j = 0; j < m; j++) {
-#                     d2(j, i) *= SShB2(i - 1);
-#                 }
-#             }
-#
-#             for (j = 0; j < m; j++) {
-#                 dSum(j) = 0;
-#                 for (i = 0; i <= Mx; i++) {
-#                     dSum(j) += d2(j, i);
-#                 }
-#             }
-#
-#             for (j = 0; j < m; j++) {
-#                 if (dSum(j) != 0) {
-#                     for (i = 0; i <= Mx; i++) {
-#                         d2(j, i) /= dSum(j);
-#                     }
-#                 }
-#             }
-#
-#             for (j = 0; j < m; j++) {
-#                 for (u = 1; u <= Mx; u++) {
-#                     x = 0;
-#                     for (v = u; v < Mx + 1; v++)
-#                         x += d2(j, v);
-#                     D2(j, (u - 1)) = x;
-#                 }
-#                 for (u = Mx + 1; u <= n; u++) {
-#                     D2(j, (u - 1)) = 0;
-#                 }
-#             }
-#
-#             for (j = 0; j < m; j++) {
-#                 B_star(j, t) = 0;
-#                 Observ = 0;
-#                 for (u = 1; u <= std::min(n - t, Mx2(j)); u++) {
-#                     // Add support for listwise missing observations
-#                     if (std::any_of(allprobs(_, t + u - 1).cbegin(), allprobs(_, t + u - 1).cend(), NumericVector::is_na)) {
-#                         if (SShB2(u - 1) == 1) {
-#                             if (u < n - t) {
-#                                 Occupancy(j, endID(t) + (u - 1)) = exp(Backward(j, t + u) + Observ + log(d2(j, u)));
-#                             } else {
-#                                 Occupancy(j, endID(t) + (u - 1)) = exp(Observ + log(D2(j, n - 1 - t)));
-#                             }
-#                             B_star(j, t) += Occupancy(j, endID(t) + (u - 1));
-#                         }
-#                     } else {
-#                         Observ += log(allprobs(j, t + u - 1)) - N(t + u - 1);
-#                         if (SShB2(u - 1) == 1) {
-#                             if (u < n - t) {
-#                                 Occupancy(j, endID(t) + (u - 1)) = exp(Backward(j, t + u) + Observ + log(d2(j, u)));
-#                             } else {
-#                                 Occupancy(j, endID(t) + (u - 1)) = exp(Observ + log(D2(j, n - 1 - t)));
-#                             }
-#                             B_star(j, t) += Occupancy(j, endID(t) + (u - 1));
-#                         }
-#                     }
-#                 }
-#                 B_star(j, t) = log(B_star(j, t));
-#             }
-#             for (j = 0; j < m; j++) {
-#                 Backward(j, t) = 0;
-#                 for (k = 0; k < m; k++) {
-#                     Backward(j, t) += exp(B_star(k, t) + log(gamma(j, k)));
-#                 }
-#                 Backward(j, t) = log(Backward(j, t));
-#             }
-#         }
-#     }
-#
-#     List H(n);
-#     for (i = 0; i < n; i++) {
-#         if (S(i) == 0) {
-#             H(i) = zer;
-#         } else {
-#             NumericMatrix foo(m, lengthID(i));
-#             for (k = 0; k < lengthID(i); k++) {
-#                 foo(_, k) = Occupancy(_, k + endID(i));
-#             }
-#             H(i) = foo;
-#         }
-#     }
-#     // Return Forward probabilities too
-#     return List::create(N, B_star, H, Forward);
-# }")
-
-
-
-
-
-
-# New try
 cppFunction("List mult_ed_fb_cpp(int m, int n, NumericVector delta, NumericMatrix allprobs, int Mx, IntegerVector Mx2, NumericMatrix gamma, NumericMatrix d, IntegerVector S, IntegerVector S2) {
     int j, t, i, u, uMax, v, k, Len;
 
@@ -509,7 +208,6 @@ cppFunction("List mult_ed_fb_cpp(int m, int n, NumericVector delta, NumericMatri
     }
 
     // Backward recursion
-    NumericVector N_backward(n); // Log normalization constants for backward pass
 
     for (t = n - 1; t >= 0; t--) {
         if (S(t) == 1) {
@@ -585,21 +283,6 @@ cppFunction("List mult_ed_fb_cpp(int m, int n, NumericVector delta, NumericMatri
                 }
                 B_star(j, t) = log(B_star(j, t));
             }
-            // Calculate N_backward(t) as the log-sum-exp of B_star(j, t)
-            Rcpp::NumericVector B_star_t = B_star(_, t);
-            double max_B_star = Rcpp::max(B_star_t);
-            double sum_exp = 0.0;
-            for (int j = 0; j < B_star_t.size(); ++j) {
-                sum_exp += std::exp(B_star_t[j] - max_B_star);
-            }
-            N_backward(t) = max_B_star + std::log(sum_exp);
-
-            // Normalize B_star(j, t)
-            for (j = 0; j < m; j++) {
-                B_star(j, t) -= N_backward(t);
-            }
-
-            // Calculate Backward(j, t) with normalization
             for (j = 0; j < m; j++) {
                 Backward(j, t) = 0;
                 for (k = 0; k < m; k++) {
@@ -630,918 +313,870 @@ cppFunction("List mult_ed_fb_cpp(int m, int n, NumericVector delta, NumericMatri
 
 
 
+cppFunction("List mult_ed_fb_cpp(int m, int n, NumericVector delta, NumericMatrix allprobs, int Mx, IntegerVector Mx2, NumericMatrix gamma, NumericMatrix d, IntegerVector S, IntegerVector S2) {
+    int j, t, i, u, uMax, v, k, Len;
+
+    int zer = 0;
+    NumericMatrix d2 = clone(d);
+
+    double x;
+    NumericMatrix D2(m, n);
+    NumericVector dSum(m);
+
+    NumericVector N(n);
+    NumericMatrix Norm(m, n);
+    NumericMatrix Forward(m, n);
+    NumericMatrix StateIn(m, n);
+    double Observ = 0;
+
+    NumericMatrix Backward(m, n);
+    NumericMatrix B_star(m, n + 2);
+    IntegerVector VarL(Mx - 1);
+    for (i = 1; i < Mx; i++) {
+        VarL(i - 1) = Mx - i;
+    }
+    int occNcol = Mx * (n - Mx + 1) + sum(VarL);
+    NumericMatrix Occupancy(m, occNcol);
+
+    IntegerVector lengthID(n);
+    for (i = 0; i < n; i++) {
+        if (i < n - Mx + 1) {
+            lengthID(i) = Mx;
+        } else {
+            lengthID(i) = VarL(i - (n - Mx + 1));
+        }
+    }
+
+    IntegerVector endID(n + 2);
+    for (i = 0; i < n + 2; i++) {
+        if (i == 0) {
+            endID(i) = 0;
+        }
+        if (i > 0) {
+            if (i < n + 1) {
+                endID(i) = endID(i - 1) + lengthID(i - 1);
+            }
+        }
+        if (i == n + 1) {
+            endID(i) = endID(i - 1);
+        }
+    }
+
+    IntegerVector::const_iterator first = S.begin() + 0;
+
+    // forward recursion
+    for (t = 0; t <= n - 1; t++) {
+
+        uMax = std::min(t + 1, Mx + 1);
+
+        IntegerVector::const_iterator last = S.begin() + (t + 1);
+        IntegerVector SSh(first, last);
+        Len = SSh.size();
+        IntegerVector SShrev(Len);
+        for (i = 0; i < Len; i++) {
+            SShrev(i) = SSh(Len - 1 - i);
+        }
+
+        IntegerVector::const_iterator first2 = SShrev.begin() + 0;
+        IntegerVector::const_iterator last2 = SShrev.begin() + (uMax);
+        IntegerVector SShrev2(first2, last2);
+
+        d2 = clone(d);
+        for (i = 1; i < uMax; i++) {
+            for (j = 0; j < m; j++) {
+                d2(j, i) *= SShrev2(i - 1);
+            }
+        }
+
+        for (j = 0; j < m; j++) {
+            dSum(j) = 0;
+            for (i = 0; i <= Mx; i++) {
+                dSum(j) += d2(j, i);
+            }
+        }
+
+        for (j = 0; j < m; j++) {
+            if (dSum(j) != 0) {
+                for (i = 0; i <= Mx; i++) {
+                    d2(j, i) /= dSum(j);
+                }
+            }
+        }
+
+        if (t == n - 1) {
+            for (j = 0; j < m; j++) {
+                for (u = 1; u <= Mx; u++) {
+                    x = 0;
+                    for (v = u; v < Mx + 1; v++)
+                        x += d2(j, v);
+                    D2(j, (u - 1)) = x;
+                }
+                for (u = Mx + 1; u <= n; u++) {
+                    D2(j, (u - 1)) = 0;
+                }
+            }
+        }
+
+        N(t) = 0;
+        for (j = 0; j < m; j++) {
+            if (t == 0) {
+                // Add support for listwise missing observations
+                // Calculate initial state probabilities at t = 0
+                if (std::any_of(allprobs(_, 0).cbegin(), allprobs(_, 0).cend(), NumericVector::is_na)) {
+                    Norm(j, 0) = log(delta(j));
+                } else {
+                    Norm(j, 0) = log(delta(j)) + log(allprobs(j, 0));
+                }
+            } else {
+                // Check for missing values in the row at time t of allprobs
+                if (std::any_of(allprobs(_, t).cbegin(), allprobs(_, t).cend(), NumericVector::is_na)) {
+                    Norm(j, t) = log(std::abs(exp(StateIn(j, t)) - exp(Forward(j, (t - 1))) + exp(Norm(j, (t - 1)))));
+                } else {
+                    Norm(j, t) = log(allprobs(j, t)) + log(std::abs(exp(StateIn(j, t)) - exp(Forward(j, (t - 1))) + exp(Norm(j, (t - 1)))));
+                }
+            }
+            N(t) += exp(Norm(j, t));
+        }
+        N(t) = log(N(t));
+        for (j = 0; j < m; j++) {
+            Norm(j, t) -= N(t);
+        }
+
+        for (j = 0; j < m; j++) {
+            Forward(j, t) = 0;
+            Observ = 0;
+
+            if (t < n - 1) {
+                for (u = 1; u <= std::min(t + 1, Mx2(j)); u++) {
+                    // Add support for listwise missing observations
+                    // Check for missing values in allprobs
+                    if (std::any_of(allprobs(_, t - u + 1).cbegin(), allprobs(_, t - u + 1).cend(), NumericVector::is_na)) {
+                        if (SShrev2(u - 1) == 1) {
+                            if (u < t + 1) {
+                                Forward(j, t) += exp(Observ + log(d2(j, u)) + StateIn(j, (t - u + 1)));
+                            } else {
+                                Forward(j, t) += exp(Observ + log(d2(j, t + 1)) + log(delta(j)));
+                            }
+                        }
+                    } else {
+                        Observ += log(allprobs(j, t - u + 1)) - N(t - u + 1);
+                        if (SShrev2(u - 1) == 1) {
+                            if (u < t + 1) {
+                                Forward(j, t) += exp(Observ + log(d2(j, u)) + StateIn(j, (t - u + 1)));
+                            } else {
+                                Forward(j, t) += exp(Observ + log(d2(j, t + 1)) + log(delta(j)));
+                            }
+                        }
+                    }
+                }
+                Forward(j, t) = log(Forward(j, t));
+            } else {
+                for (u = 1; u <= std::min(n, Mx2(j)); u++) {
+                    // Add support for listwise missing observations
+                    if (std::any_of(allprobs(_, t - u + 1).cbegin(), allprobs(_, t - u + 1).cend(), NumericVector::is_na)) {
+                        if (SShrev2(u - 1) == 1) {
+                            if (u < n) {
+                                Forward(j, n - 1) += exp(Observ + log(D2(j, u)) + StateIn(j, n - u));
+                            } else {
+                                Forward(j, n - 1) += exp(Observ + log(D2(j, n)) + log(delta(j)));
+                            }
+                        }
+                    } else {
+                        Observ += log(allprobs(j, t - u + 1)) - N(t - u + 1);
+                        if (SShrev2(u - 1) == 1) {
+                            if (u < n) {
+                                Forward(j, n - 1) += exp(Observ + log(D2(j, u)) + StateIn(j, n - u));
+                            } else {
+                                Forward(j, n - 1) += exp(Observ + log(D2(j, n)) + log(delta(j)));
+                            }
+                        }
+                    }
+                }
+                Forward(j, n - 1) = log(Forward(j, n - 1));
+            }
+        }
+        if (t < n - 1) {
+            for (j = 0; j < m; j++) {
+                StateIn(j, t + 1) = 0;
+                for (i = 0; i < m; i++) {
+                    StateIn(j, t + 1) += exp(Forward(i, t) + log(gamma(i, j)));
+                }
+                StateIn(j, t + 1) = log(StateIn(j, t + 1));
+            }
+        }
+    }
+
+    // Backward recursion
+
+    for (t = n - 1; t >= 0; t--) {
+        if (S(t) == 1) {
+
+            uMax = std::min(n - t, Mx);
+            IntegerVector::const_iterator first3 = S2.begin() + t;
+            IntegerVector::const_iterator last3 = S2.begin() + (n);
+            IntegerVector SShB(first3, last3);
+
+            IntegerVector::const_iterator first4 = SShB.begin() + 0;
+            IntegerVector::const_iterator last4 = SShB.begin() + (uMax);
+            IntegerVector SShB2(first4, last4);
+
+            d2 = clone(d);
+            for (i = 1; i < uMax + 1; i++) {
+                for (j = 0; j < m; j++) {
+                    d2(j, i) *= SShB2(i - 1);
+                }
+            }
+
+            for (j = 0; j < m; j++) {
+                dSum(j) = 0;
+                for (i = 0; i <= Mx; i++) {
+                    dSum(j) += d2(j, i);
+                }
+            }
+
+            for (j = 0; j < m; j++) {
+                if (dSum(j) != 0) {
+                    for (i = 0; i <= Mx; i++) {
+                        d2(j, i) /= dSum(j);
+                    }
+                }
+            }
+
+            for (j = 0; j < m; j++) {
+                for (u = 1; u <= Mx; u++) {
+                    x = 0;
+                    for (v = u; v < Mx + 1; v++)
+                        x += d2(j, v);
+                    D2(j, (u - 1)) = x;
+                }
+                for (u = Mx + 1; u <= n; u++) {
+                    D2(j, (u - 1)) = 0;
+                }
+            }
+
+            for (j = 0; j < m; j++) {
+                B_star(j, t) = 0;
+                Observ = 0;
+                for (u = 1; u <= std::min(n - t, Mx2(j)); u++) {
+                    // Add support for listwise missing observations
+                    if (std::any_of(allprobs(_, t + u - 1).cbegin(), allprobs(_, t + u - 1).cend(), NumericVector::is_na)) {
+                        if (SShB2(u - 1) == 1) {
+                            if (u < n - t) {
+                                Occupancy(j, endID(t) + (u - 1)) = exp(Backward(j, t + u) + Observ + log(d2(j, u)) - Forward(j, t + u));
+                            } else {
+                                Occupancy(j, endID(t) + (u - 1)) = exp(Observ + log(D2(j, n - 1 - t)));
+                            }
+                            B_star(j, t) += Occupancy(j, endID(t) + (u - 1));
+                        }
+                    } else {
+                        Observ += log(allprobs(j, t + u - 1)) - N(t + u - 1);
+                        if (SShB2(u - 1) == 1) {
+                            if (u < n - t) {
+                                Occupancy(j, endID(t) + (u - 1)) = exp(Backward(j, t + u) + Observ + log(d2(j, u)) - Forward(j, t + u));
+                            } else {
+                                Occupancy(j, endID(t) + (u - 1)) = exp(Observ + log(D2(j, n - 1 - t)));
+                            }
+                            B_star(j, t) += Occupancy(j, endID(t) + (u - 1));
+                        }
+                    }
+                }
+                B_star(j, t) = log(B_star(j, t));
+            }
+            for (j = 0; j < m; j++) {
+                Backward(j, t) = 0;
+                for (k = 0; k < m; k++) {
+                    Backward(j, t) += exp(B_star(k, t) + log(gamma(j, k)));
+                }
+                Backward(j, t) = log(Backward(j, t));
+                Backward(j, t) += Forward(j, t);
+            }
+        }
+    }
+
+    List H(n);
+    for (i = 0; i < n; i++) {
+        if (S(i) == 0) {
+            H(i) = zer;
+        } else {
+            NumericMatrix foo(m, lengthID(i));
+            for (k = 0; k < lengthID(i); k++) {
+                foo(_, k) = Occupancy(_, k + endID(i));
+            }
+            H(i) = foo;
+        }
+    }
+    // Return Forward probabilities too
+    return List::create(N, B_star, H, Forward);
+}")
 
 
-# # New try II
-# cppFunction("List mult_ed_fb_cpp(int m, int n, NumericVector delta, NumericMatrix allprobs, int Mx, IntegerVector Mx2, NumericMatrix gamma, NumericMatrix d, IntegerVector S, IntegerVector S2) {
-#     int j, t, i, u, uMax, v, k, Len;
-#
-#     int zer = 0;
-#     NumericMatrix d2 = clone(d);
-#
-#     double x;
-#     NumericMatrix D2(m, n);
-#     NumericVector dSum(m);
-#
-#     NumericVector N(n);
-#     NumericMatrix Norm(m, n);
-#     NumericMatrix Forward(m, n);
-#     NumericMatrix StateIn(m, n);
-#     double Observ = 0;
-#
-#     NumericMatrix Backward(m, n);
-#     NumericMatrix B_star(m, n + 2);
-#     IntegerVector VarL(Mx - 1);
-#     for (i = 1; i < Mx; i++) {
-#         VarL(i - 1) = Mx - i;
-#     }
-#     int occNcol = Mx * (n - Mx + 1) + sum(VarL);
-#     NumericMatrix Occupancy(m, occNcol);
-#
-#     IntegerVector lengthID(n);
-#     for (i = 0; i < n; i++) {
-#         if (i < n - Mx + 1) {
-#             lengthID(i) = Mx;
-#         } else {
-#             lengthID(i) = VarL(i - (n - Mx + 1));
-#         }
-#     }
-#
-#     IntegerVector endID(n + 2);
-#     for (i = 0; i < n + 2; i++) {
-#         if (i == 0) {
-#             endID(i) = 0;
-#         }
-#         if (i > 0) {
-#             if (i < n + 1) {
-#                 endID(i) = endID(i - 1) + lengthID(i - 1);
-#             }
-#         }
-#         if (i == n + 1) {
-#             endID(i) = endID(i - 1);
-#         }
-#     }
-#
-#     IntegerVector::const_iterator first = S.begin() + 0;
-#
-#     // forward recursion
-#     for (t = 0; t <= n - 1; t++) {
-#
-#         uMax = std::min(t + 1, Mx + 1);
-#
-#         IntegerVector::const_iterator last = S.begin() + (t + 1);
-#         IntegerVector SSh(first, last);
-#         Len = SSh.size();
-#         IntegerVector SShrev(Len);
-#         for (i = 0; i < Len; i++) {
-#             SShrev(i) = SSh(Len - 1 - i);
-#         }
-#
-#         IntegerVector::const_iterator first2 = SShrev.begin() + 0;
-#         IntegerVector::const_iterator last2 = SShrev.begin() + (uMax);
-#         IntegerVector SShrev2(first2, last2);
-#
-#         d2 = clone(d);
-#         for (i = 1; i < uMax; i++) {
-#             for (j = 0; j < m; j++) {
-#                 d2(j, i) *= SShrev2(i - 1);
-#             }
-#         }
-#
-#         for (j = 0; j < m; j++) {
-#             dSum(j) = 0;
-#             for (i = 0; i <= Mx; i++) {
-#                 dSum(j) += d2(j, i);
-#             }
-#         }
-#
-#         for (j = 0; j < m; j++) {
-#             if (dSum(j) != 0) {
-#                 for (i = 0; i <= Mx; i++) {
-#                     d2(j, i) /= dSum(j);
-#                 }
-#             }
-#         }
-#
-#         if (t == n - 1) {
-#             for (j = 0; j < m; j++) {
-#                 for (u = 1; u <= Mx; u++) {
-#                     x = 0;
-#                     for (v = u; v < Mx + 1; v++)
-#                         x += d2(j, v);
-#                     D2(j, (u - 1)) = x;
-#                 }
-#                 for (u = Mx + 1; u <= n; u++) {
-#                     D2(j, (u - 1)) = 0;
-#                 }
-#             }
-#         }
-#
-#         N(t) = 0;
-#         for (j = 0; j < m; j++) {
-#             if (t == 0) {
-#                 // Add support for listwise missing observations
-#                 // Calculate initial state probabilities at t = 0
-#                 if (std::any_of(allprobs(_, 0).cbegin(), allprobs(_, 0).cend(), NumericVector::is_na)) {
-#                     Norm(j, 0) = log(delta(j));
-#                 } else {
-#                     Norm(j, 0) = log(delta(j)) + log(allprobs(j, 0));
-#                 }
-#             } else {
-#                 // Check for missing values in the row at time t of allprobs
-#                 if (std::any_of(allprobs(_, t).cbegin(), allprobs(_, t).cend(), NumericVector::is_na)) {
-#                     Norm(j, t) = log(std::abs(exp(StateIn(j, t)) - exp(Forward(j, (t - 1))) + exp(Norm(j, (t - 1)))));
-#                 } else {
-#                     Norm(j, t) = log(allprobs(j, t)) + log(std::abs(exp(StateIn(j, t)) - exp(Forward(j, (t - 1))) + exp(Norm(j, (t - 1)))));
-#                 }
-#             }
-#             N(t) += exp(Norm(j, t));
-#         }
-#         N(t) = log(N(t));
-#         for (j = 0; j < m; j++) {
-#             Norm(j, t) -= N(t);
-#         }
-#
-#         for (j = 0; j < m; j++) {
-#             Forward(j, t) = 0;
-#             Observ = 0;
-#
-#             if (t < n - 1) {
-#                 for (u = 1; u <= std::min(t + 1, Mx2(j)); u++) {
-#                     // Add support for listwise missing observations
-#                     // Check for missing values in allprobs
-#                     if (std::any_of(allprobs(_, t - u + 1).cbegin(), allprobs(_, t - u + 1).cend(), NumericVector::is_na)) {
-#                         if (SShrev2(u - 1) == 1) {
-#                             if (u < t + 1) {
-#                                 Forward(j, t) += exp(Observ + log(d2(j, u)) + StateIn(j, (t - u + 1)));
-#                             } else {
-#                                 Forward(j, t) += exp(Observ + log(d2(j, t + 1)) + log(delta(j)));
-#                             }
-#                         }
-#                     } else {
-#                         Observ += log(allprobs(j, t - u + 1)) - N(t - u + 1);
-#                         if (SShrev2(u - 1) == 1) {
-#                             if (u < t + 1) {
-#                                 Forward(j, t) += exp(Observ + log(d2(j, u)) + StateIn(j, (t - u + 1)));
-#                             } else {
-#                                 Forward(j, t) += exp(Observ + log(d2(j, t + 1)) + log(delta(j)));
-#                             }
-#                         }
-#                     }
-#                 }
-#                 Forward(j, t) = log(Forward(j, t));
-#             } else {
-#                 for (u = 1; u <= std::min(n, Mx2(j)); u++) {
-#                     // Add support for listwise missing observations
-#                     if (std::any_of(allprobs(_, t - u + 1).cbegin(), allprobs(_, t - u + 1).cend(), NumericVector::is_na)) {
-#                         if (SShrev2(u - 1) == 1) {
-#                             if (u < n) {
-#                                 Forward(j, n - 1) += exp(Observ + log(D2(j, u)) + StateIn(j, n - u));
-#                             } else {
-#                                 Forward(j, n - 1) += exp(Observ + log(D2(j, n)) + log(delta(j)));
-#                             }
-#                         }
-#                     } else {
-#                         Observ += log(allprobs(j, t - u + 1)) - N(t - u + 1);
-#                         if (SShrev2(u - 1) == 1) {
-#                             if (u < n) {
-#                                 Forward(j, n - 1) += exp(Observ + log(D2(j, u)) + StateIn(j, n - u));
-#                             } else {
-#                                 Forward(j, n - 1) += exp(Observ + log(D2(j, n)) + log(delta(j)));
-#                             }
-#                         }
-#                     }
-#                 }
-#                 Forward(j, n - 1) = log(Forward(j, n - 1));
-#             }
-#         }
-#         if (t < n - 1) {
-#             for (j = 0; j < m; j++) {
-#                 StateIn(j, t + 1) = 0;
-#                 for (i = 0; i < m; i++) {
-#                     StateIn(j, t + 1) += exp(Forward(i, t) + log(gamma(i, j)));
-#                 }
-#                 StateIn(j, t + 1) = log(StateIn(j, t + 1));
-#             }
-#         }
-#     }
-#
-#     // Backward recursion
-#
-#     for (t = n - 1; t >= 0; t--) {
-#         if (S(t) == 1) {
-#
-#             uMax = std::min(n - t, Mx);
-#             IntegerVector::const_iterator first3 = S2.begin() + t;
-#             IntegerVector::const_iterator last3 = S2.begin() + (n);
-#             IntegerVector SShB(first3, last3);
-#
-#             IntegerVector::const_iterator first4 = SShB.begin() + 0;
-#             IntegerVector::const_iterator last4 = SShB.begin() + (uMax);
-#             IntegerVector SShB2(first4, last4);
-#
-#             d2 = clone(d);
-#             for (i = 1; i < uMax + 1; i++) {
-#                 for (j = 0; j < m; j++) {
-#                     d2(j, i) *= SShB2(i - 1);
-#                 }
-#             }
-#
-#             for (j = 0; j < m; j++) {
-#                 dSum(j) = 0;
-#                 for (i = 0; i <= Mx; i++) {
-#                     dSum(j) += d2(j, i);
-#                 }
-#             }
-#
-#             for (j = 0; j < m; j++) {
-#                 if (dSum(j) != 0) {
-#                     for (i = 0; i <= Mx; i++) {
-#                         d2(j, i) /= dSum(j);
-#                     }
-#                 }
-#             }
-#
-#             for (j = 0; j < m; j++) {
-#                 for (u = 1; u <= Mx; u++) {
-#                     x = 0;
-#                     for (v = u; v < Mx + 1; v++)
-#                         x += d2(j, v);
-#                     D2(j, (u - 1)) = x;
-#                 }
-#                 for (u = Mx + 1; u <= n; u++) {
-#                     D2(j, (u - 1)) = 0;
-#                 }
-#             }
-#
-#             for (j = 0; j < m; j++) {
-#                 B_star(j, t) = 0;
-#                 Observ = 0;
-#                 for (u = 1; u <= std::min(n - t, Mx2(j)); u++) {
-#                     // Add support for listwise missing observations
-#                     if (std::any_of(allprobs(_, t + u - 1).cbegin(), allprobs(_, t + u - 1).cend(), NumericVector::is_na)) {
-#                         if (SShB2(u - 1) == 1) {
-#                             if (u < n - t) {
-#                                 Occupancy(j, endID(t) + (u - 1)) = exp(Backward(j, t + u) + Observ + log(d2(j, u)));
-#                             } else {
-#                                 Occupancy(j, endID(t) + (u - 1)) = exp(Observ + log(D2(j, n - 1 - t)));
-#                             }
-#                             B_star(j, t) += Occupancy(j, endID(t) + (u - 1));
-#                         }
-#                     } else {
-#                         Observ += log(allprobs(j, t + u - 1)) - N(t + u - 1);
-#                         if (SShB2(u - 1) == 1) {
-#                             if (u < n - t) {
-#                                 Occupancy(j, endID(t) + (u - 1)) = exp(Backward(j, t + u) + Observ + log(d2(j, u)));
-#                             } else {
-#                                 Occupancy(j, endID(t) + (u - 1)) = exp(Observ + log(D2(j, n - 1 - t)));
-#                             }
-#                             B_star(j, t) += Occupancy(j, endID(t) + (u - 1));
-#                         }
-#                     }
-#                 }
-#                 // Normalize B_star(j, t) using N(t)
-#                 B_star(j, t) = log(B_star(j, t)) - N(t);
-#             }
-#             for (j = 0; j < m; j++) {
-#                 Backward(j, t) = 0;
-#                 for (k = 0; k < m; k++) {
-#                     Backward(j, t) += exp(B_star(k, t) + log(gamma(j, k)));
-#                 }
-#                 Backward(j, t) = log(Backward(j, t));
-#             }
-#         }
-#     }
-#
-#     List H(n);
-#     for (i = 0; i < n; i++) {
-#         if (S(i) == 0) {
-#             H(i) = zer;
-#         } else {
-#             NumericMatrix foo(m, lengthID(i));
-#             for (k = 0; k < lengthID(i); k++) {
-#                 foo(_, k) = Occupancy(_, k + endID(i));
-#             }
-#             H(i) = foo;
-#         }
-#     }
-#     // Return Forward probabilities too
-#     return List::create(N, B_star, H, Forward);
-# }")
-#
-#
-#
-#
-#
-#
-#
-#
-#
-# # Both normalized
-# cppFunction("List mult_ed_fb_cpp(int m, int n, NumericVector delta, NumericMatrix allprobs, int Mx, IntegerVector Mx2, NumericMatrix gamma, NumericMatrix d, IntegerVector S, IntegerVector S2) {
-#     int j, t, i, u, uMax, v, k, Len;
-#
-#     int zer = 0;
-#     NumericMatrix d2 = clone(d);
-#
-#     double x;
-#     NumericMatrix D2(m, n);
-#     NumericVector dSum(m);
-#
-#     NumericVector N(n);
-#     NumericMatrix Norm(m, n);
-#     NumericMatrix Forward(m, n);
-#     NumericMatrix StateIn(m, n);
-#     double Observ = 0;
-#
-#     NumericMatrix Backward(m, n);
-#     NumericMatrix B_star(m, n + 2);
-#     IntegerVector VarL(Mx - 1);
-#     for (i = 1; i < Mx; i++) {
-#         VarL(i - 1) = Mx - i;
-#     }
-#     int occNcol = Mx * (n - Mx + 1) + sum(VarL);
-#     NumericMatrix Occupancy(m, occNcol);
-#
-#     IntegerVector lengthID(n);
-#     for (i = 0; i < n; i++) {
-#         if (i < n - Mx + 1) {
-#             lengthID(i) = Mx;
-#         } else {
-#             lengthID(i) = VarL(i - (n - Mx + 1));
-#         }
-#     }
-#
-#     IntegerVector endID(n + 2);
-#     for (i = 0; i < n + 2; i++) {
-#         if (i == 0) {
-#             endID(i) = 0;
-#         }
-#         if (i > 0) {
-#             if (i < n + 1) {
-#                 endID(i) = endID(i - 1) + lengthID(i - 1);
-#             }
-#         }
-#         if (i == n + 1) {
-#             endID(i) = endID(i - 1);
-#         }
-#     }
-#
-#     IntegerVector::const_iterator first = S.begin() + 0;
-#
-#     // forward recursion
-#     for (t = 0; t <= n - 1; t++) {
-#
-#         uMax = std::min(t + 1, Mx + 1);
-#
-#         IntegerVector::const_iterator last = S.begin() + (t + 1);
-#         IntegerVector SSh(first, last);
-#         Len = SSh.size();
-#         IntegerVector SShrev(Len);
-#         for (i = 0; i < Len; i++) {
-#             SShrev(i) = SSh(Len - 1 - i);
-#         }
-#
-#         IntegerVector::const_iterator first2 = SShrev.begin() + 0;
-#         IntegerVector::const_iterator last2 = SShrev.begin() + (uMax);
-#         IntegerVector SShrev2(first2, last2);
-#
-#         d2 = clone(d);
-#         for (i = 1; i < uMax; i++) {
-#             for (j = 0; j < m; j++) {
-#                 d2(j, i) *= SShrev2(i - 1);
-#             }
-#         }
-#
-#         for (j = 0; j < m; j++) {
-#             dSum(j) = 0;
-#             for (i = 0; i <= Mx; i++) {
-#                 dSum(j) += d2(j, i);
-#             }
-#         }
-#
-#         for (j = 0; j < m; j++) {
-#             if (dSum(j) != 0) {
-#                 for (i = 0; i <= Mx; i++) {
-#                     d2(j, i) /= dSum(j);
-#                 }
-#             }
-#         }
-#
-#         if (t == n - 1) {
-#             for (j = 0; j < m; j++) {
-#                 for (u = 1; u <= Mx; u++) {
-#                     x = 0;
-#                     for (v = u; v < Mx + 1; v++)
-#                         x += d2(j, v);
-#                     D2(j, (u - 1)) = x;
-#                 }
-#                 for (u = Mx + 1; u <= n; u++) {
-#                     D2(j, (u - 1)) = 0;
-#                 }
-#             }
-#         }
-#
-#         N(t) = 0;
-#         for (j = 0; j < m; j++) {
-#             if (t == 0) {
-#                 // Add support for listwise missing observations
-#                 // Calculate initial state probabilities at t = 0
-#                 if (std::any_of(allprobs(_, 0).cbegin(), allprobs(_, 0).cend(), NumericVector::is_na)) {
-#                     Norm(j, 0) = log(delta(j));
-#                 } else {
-#                     Norm(j, 0) = log(delta(j)) + log(allprobs(j, 0));
-#                 }
-#             } else {
-#                 // Check for missing values in the row at time t of allprobs
-#                 if (std::any_of(allprobs(_, t).cbegin(), allprobs(_, t).cend(), NumericVector::is_na)) {
-#                     Norm(j, t) = log(std::abs(exp(StateIn(j, t)) - exp(Forward(j, (t - 1))) + exp(Norm(j, (t - 1)))));
-#                 } else {
-#                     Norm(j, t) = log(allprobs(j, t)) + log(std::abs(exp(StateIn(j, t)) - exp(Forward(j, (t - 1))) + exp(Norm(j, (t - 1)))));
-#                 }
-#             }
-#             N(t) += exp(Norm(j, t));
-#         }
-#         N(t) = log(N(t));
-#         for (j = 0; j < m; j++) {
-#             Norm(j, t) -= N(t);
-#         }
-#
-#         for (j = 0; j < m; j++) {
-#             Forward(j, t) = 0;
-#             Observ = 0;
-#
-#             if (t < n - 1) {
-#                 for (u = 1; u <= std::min(t + 1, Mx2(j)); u++) {
-#                     // Add support for listwise missing observations
-#                     // Check for missing values in allprobs
-#                     if (std::any_of(allprobs(_, t - u + 1).cbegin(), allprobs(_, t - u + 1).cend(), NumericVector::is_na)) {
-#                         if (SShrev2(u - 1) == 1) {
-#                             if (u < t + 1) {
-#                                 Forward(j, t) += exp(Observ + log(d2(j, u)) + StateIn(j, (t - u + 1)));
-#                             } else {
-#                                 Forward(j, t) += exp(Observ + log(d2(j, t + 1)) + log(delta(j)));
-#                             }
-#                         }
-#                     } else {
-#                         Observ += log(allprobs(j, t - u + 1)) - N(t - u + 1);
-#                         if (SShrev2(u - 1) == 1) {
-#                             if (u < t + 1) {
-#                                 Forward(j, t) += exp(Observ + log(d2(j, u)) + StateIn(j, (t - u + 1)));
-#                             } else {
-#                                 Forward(j, t) += exp(Observ + log(d2(j, t + 1)) + log(delta(j)));
-#                             }
-#                         }
-#                     }
-#                 }
-#                 Forward(j, t) = log(Forward(j, t));
-#             } else {
-#                 for (u = 1; u <= std::min(n, Mx2(j)); u++) {
-#                     // Add support for listwise missing observations
-#                     if (std::any_of(allprobs(_, t - u + 1).cbegin(), allprobs(_, t - u + 1).cend(), NumericVector::is_na)) {
-#                         Observ += - N(t - u + 1);
-#                         if (SShrev2(u - 1) == 1) {
-#                             if (u < n) {
-#                                 Forward(j, n - 1) += exp(Observ + log(D2(j, u)) + StateIn(j, n - u));
-#                             } else {
-#                                 Forward(j, n - 1) += exp(Observ + log(D2(j, n)) + log(delta(j)));
-#                             }
-#                         }
-#                     } else {
-#                         Observ += log(allprobs(j, t - u + 1)) - N(t - u + 1);
-#                         if (SShrev2(u - 1) == 1) {
-#                             if (u < n) {
-#                                 Forward(j, n - 1) += exp(Observ + log(D2(j, u)) + StateIn(j, n - u));
-#                             } else {
-#                                 Forward(j, n - 1) += exp(Observ + log(D2(j, n)) + log(delta(j)));
-#                             }
-#                         }
-#                     }
-#                 }
-#                 Forward(j, n - 1) = log(Forward(j, n - 1));
-#             }
-#         }
-#         if (t < n - 1) {
-#             for (j = 0; j < m; j++) {
-#                 StateIn(j, t + 1) = 0;
-#                 for (i = 0; i < m; i++) {
-#                     StateIn(j, t + 1) += exp(Forward(i, t) + log(gamma(i, j)));
-#                 }
-#                 StateIn(j, t + 1) = log(StateIn(j, t + 1));
-#             }
-#         }
-#     }
-#
-#     // Backward recursion with normalization and Occupancy calculation
-#     for (t = n - 1; t >= 0; t--) {
-#         if (S(t) == 1) {
-#             uMax = std::min(n - t, Mx);
-#             IntegerVector::const_iterator first3 = S2.begin() + t;
-#             IntegerVector::const_iterator last3 = S2.begin() + (n);
-#             IntegerVector SShB(first3, last3);
-#
-#             IntegerVector::const_iterator first4 = SShB.begin();
-#             IntegerVector::const_iterator last4 = SShB.begin() + uMax;
-#             IntegerVector SShB2(first4, last4);
-#
-#             d2 = clone(d);
-#             for (i = 1; i <= uMax; i++) {
-#                 for (j = 0; j < m; j++) {
-#                     d2(j, i) *= SShB2(i - 1);
-#                 }
-#             }
-#
-#             for (j = 0; j < m; j++) {
-#                 dSum(j) = 0;
-#                 for (i = 0; i <= Mx; i++) {
-#                     dSum(j) += d2(j, i);
-#                 }
-#             }
-#
-#             for (j = 0; j < m; j++) {
-#                 if (dSum(j) != 0) {
-#                     for (i = 0; i <= Mx; i++) {
-#                         d2(j, i) /= dSum(j);
-#                     }
-#                 }
-#             }
-#
-#             // Normalization for B_star and Occupancy
-#             double max_log_prob = -std::numeric_limits<double>::infinity();
-#             for (j = 0; j < m; j++) {
-#                 B_star(j, t) = 0;
-#                 Observ = 0;
-#                 for (u = 1; u <= std::min(n - t, Mx2(j)); u++) {
-#                     double log_occupancy = 0;
-#                     if (std::any_of(allprobs(_, t + u - 1).cbegin(), allprobs(_, t + u - 1).cend(), NumericVector::is_na)) {
-#                         Observ += - N(t + u - 1);
-#                         if (SShB2(u - 1) == 1) {
-#                             if (u < n - t) {
-#                                 log_occupancy = Backward(j, t + u) + Observ + log(d2(j, u));
-#                             } else {
-#                                 log_occupancy = Observ + log(D2(j, n - 1 - t));
-#                             }
-#                             B_star(j, t) += exp(log_occupancy);
-#                             Occupancy(j, endID(t) + (u - 1)) = log_occupancy;
-#                         }
-#                     } else {
-#                         Observ += log(allprobs(j, t + u - 1)) - N(t + u - 1);
-#                         if (SShB2(u - 1) == 1) {
-#                             if (u < n - t) {
-#                                 log_occupancy = Backward(j, t + u) + Observ + log(d2(j, u));
-#                             } else {
-#                                 log_occupancy = Observ + log(D2(j, n - 1 - t));
-#                             }
-#                             B_star(j, t) += exp(log_occupancy);
-#                             Occupancy(j, endID(t) + (u - 1)) = log_occupancy;
-#                         }
-#                     }
-#                 }
-#
-#                 // Normalize B_star and Occupancy for state j at time t
-#                 B_star(j, t) = log(B_star(j, t));
-#                 max_log_prob = std::max(max_log_prob, B_star(j, t));
-#
-#                 for (u = 1; u <= std::min(n - t, Mx2(j)); u++) {
-#                     Occupancy(j, endID(t) + (u - 1)) -= max_log_prob;
-#                 }
-#             }
-#
-#             // Apply normalization to B_star and Backward for time t
-#             for (j = 0; j < m; j++) {
-#                 B_star(j, t) -= max_log_prob;
-#             }
-#
-#             for (j = 0; j < m; j++) {
-#                 Backward(j, t) = 0;
-#                 for (k = 0; k < m; k++) {
-#                     Backward(j, t) += exp(B_star(k, t) + log(gamma(j, k)));
-#                 }
-#                 Backward(j, t) = log(Backward(j, t));
-#             }
-#         }
-#     }
-#
-#
-#     List H(n);
-#     for (i = 0; i < n; i++) {
-#         if (S(i) == 0) {
-#             H(i) = zer;
-#         } else {
-#             NumericMatrix foo(m, lengthID(i));
-#             for (k = 0; k < lengthID(i); k++) {
-#                 foo(_, k) = exp(Occupancy(_, k + endID(i)));
-#             }
-#             H(i) = foo;
-#         }
-#     }
-#     // Return Forward probabilities too
-#     return List::create(N, B_star, H, Forward);
-# }")
-#
-#
-# # Only B_star normalized
-# cppFunction("List mult_ed_fb_cpp(int m, int n, NumericVector delta, NumericMatrix allprobs, int Mx, IntegerVector Mx2, NumericMatrix gamma, NumericMatrix d, IntegerVector S, IntegerVector S2) {
-#     int j, t, i, u, uMax, v, k, Len;
-#
-#     int zer = 0;
-#     NumericMatrix d2 = clone(d);
-#
-#     double x;
-#     NumericMatrix D2(m, n);
-#     NumericVector dSum(m);
-#
-#     NumericVector N(n);
-#     NumericMatrix Norm(m, n);
-#     NumericMatrix Forward(m, n);
-#     NumericMatrix StateIn(m, n);
-#     double Observ = 0;
-#
-#     NumericMatrix Backward(m, n);
-#     NumericMatrix B_star(m, n + 2);
-#     IntegerVector VarL(Mx - 1);
-#     for (i = 1; i < Mx; i++) {
-#         VarL(i - 1) = Mx - i;
-#     }
-#     int occNcol = Mx * (n - Mx + 1) + sum(VarL);
-#     NumericMatrix Occupancy(m, occNcol);
-#
-#     IntegerVector lengthID(n);
-#     for (i = 0; i < n; i++) {
-#         if (i < n - Mx + 1) {
-#             lengthID(i) = Mx;
-#         } else {
-#             lengthID(i) = VarL(i - (n - Mx + 1));
-#         }
-#     }
-#
-#     IntegerVector endID(n + 2);
-#     for (i = 0; i < n + 2; i++) {
-#         if (i == 0) {
-#             endID(i) = 0;
-#         }
-#         if (i > 0) {
-#             if (i < n + 1) {
-#                 endID(i) = endID(i - 1) + lengthID(i - 1);
-#             }
-#         }
-#         if (i == n + 1) {
-#             endID(i) = endID(i - 1);
-#         }
-#     }
-#
-#     IntegerVector::const_iterator first = S.begin() + 0;
-#
-#     // forward recursion
-#     for (t = 0; t <= n - 1; t++) {
-#
-#         uMax = std::min(t + 1, Mx + 1);
-#
-#         IntegerVector::const_iterator last = S.begin() + (t + 1);
-#         IntegerVector SSh(first, last);
-#         Len = SSh.size();
-#         IntegerVector SShrev(Len);
-#         for (i = 0; i < Len; i++) {
-#             SShrev(i) = SSh(Len - 1 - i);
-#         }
-#
-#         IntegerVector::const_iterator first2 = SShrev.begin() + 0;
-#         IntegerVector::const_iterator last2 = SShrev.begin() + (uMax);
-#         IntegerVector SShrev2(first2, last2);
-#
-#         d2 = clone(d);
-#         for (i = 1; i < uMax; i++) {
-#             for (j = 0; j < m; j++) {
-#                 d2(j, i) *= SShrev2(i - 1);
-#             }
-#         }
-#
-#         for (j = 0; j < m; j++) {
-#             dSum(j) = 0;
-#             for (i = 0; i <= Mx; i++) {
-#                 dSum(j) += d2(j, i);
-#             }
-#         }
-#
-#         for (j = 0; j < m; j++) {
-#             if (dSum(j) != 0) {
-#                 for (i = 0; i <= Mx; i++) {
-#                     d2(j, i) /= dSum(j);
-#                 }
-#             }
-#         }
-#
-#         if (t == n - 1) {
-#             for (j = 0; j < m; j++) {
-#                 for (u = 1; u <= Mx; u++) {
-#                     x = 0;
-#                     for (v = u; v < Mx + 1; v++)
-#                         x += d2(j, v);
-#                     D2(j, (u - 1)) = x;
-#                 }
-#                 for (u = Mx + 1; u <= n; u++) {
-#                     D2(j, (u - 1)) = 0;
-#                 }
-#             }
-#         }
-#
-#         N(t) = 0;
-#         for (j = 0; j < m; j++) {
-#             if (t == 0) {
-#                 // Add support for listwise missing observations
-#                 // Calculate initial state probabilities at t = 0
-#                 if (std::any_of(allprobs(_, 0).cbegin(), allprobs(_, 0).cend(), NumericVector::is_na)) {
-#                     Norm(j, 0) = log(delta(j));
-#                 } else {
-#                     Norm(j, 0) = log(delta(j)) + log(allprobs(j, 0));
-#                 }
-#             } else {
-#                 // Check for missing values in the row at time t of allprobs
-#                 if (std::any_of(allprobs(_, t).cbegin(), allprobs(_, t).cend(), NumericVector::is_na)) {
-#                     Norm(j, t) = log(std::abs(exp(StateIn(j, t)) - exp(Forward(j, (t - 1))) + exp(Norm(j, (t - 1)))));
-#                 } else {
-#                     Norm(j, t) = log(allprobs(j, t)) + log(std::abs(exp(StateIn(j, t)) - exp(Forward(j, (t - 1))) + exp(Norm(j, (t - 1)))));
-#                 }
-#             }
-#             N(t) += exp(Norm(j, t));
-#         }
-#         N(t) = log(N(t));
-#         for (j = 0; j < m; j++) {
-#             Norm(j, t) -= N(t);
-#         }
-#
-#         for (j = 0; j < m; j++) {
-#             Forward(j, t) = 0;
-#             Observ = 0;
-#
-#             if (t < n - 1) {
-#                 for (u = 1; u <= std::min(t + 1, Mx2(j)); u++) {
-#                     // Add support for listwise missing observations
-#                     // Check for missing values in allprobs
-#                     if (std::any_of(allprobs(_, t - u + 1).cbegin(), allprobs(_, t - u + 1).cend(), NumericVector::is_na)) {
-#                         if (SShrev2(u - 1) == 1) {
-#                             if (u < t + 1) {
-#                                 Forward(j, t) += exp(Observ + log(d2(j, u)) + StateIn(j, (t - u + 1)));
-#                             } else {
-#                                 Forward(j, t) += exp(Observ + log(d2(j, t + 1)) + log(delta(j)));
-#                             }
-#                         }
-#                     } else {
-#                         Observ += log(allprobs(j, t - u + 1)) - N(t - u + 1);
-#                         if (SShrev2(u - 1) == 1) {
-#                             if (u < t + 1) {
-#                                 Forward(j, t) += exp(Observ + log(d2(j, u)) + StateIn(j, (t - u + 1)));
-#                             } else {
-#                                 Forward(j, t) += exp(Observ + log(d2(j, t + 1)) + log(delta(j)));
-#                             }
-#                         }
-#                     }
-#                 }
-#                 Forward(j, t) = log(Forward(j, t));
-#             } else {
-#                 for (u = 1; u <= std::min(n, Mx2(j)); u++) {
-#                     // Add support for listwise missing observations
-#                     if (std::any_of(allprobs(_, t - u + 1).cbegin(), allprobs(_, t - u + 1).cend(), NumericVector::is_na)) {
-#                         if (SShrev2(u - 1) == 1) {
-#                             if (u < n) {
-#                                 Forward(j, n - 1) += exp(Observ + log(D2(j, u)) + StateIn(j, n - u));
-#                             } else {
-#                                 Forward(j, n - 1) += exp(Observ + log(D2(j, n)) + log(delta(j)));
-#                             }
-#                         }
-#                     } else {
-#                         Observ += log(allprobs(j, t - u + 1)) - N(t - u + 1);
-#                         if (SShrev2(u - 1) == 1) {
-#                             if (u < n) {
-#                                 Forward(j, n - 1) += exp(Observ + log(D2(j, u)) + StateIn(j, n - u));
-#                             } else {
-#                                 Forward(j, n - 1) += exp(Observ + log(D2(j, n)) + log(delta(j)));
-#                             }
-#                         }
-#                     }
-#                 }
-#                 Forward(j, n - 1) = log(Forward(j, n - 1));
-#             }
-#         }
-#         if (t < n - 1) {
-#             for (j = 0; j < m; j++) {
-#                 StateIn(j, t + 1) = 0;
-#                 for (i = 0; i < m; i++) {
-#                     StateIn(j, t + 1) += exp(Forward(i, t) + log(gamma(i, j)));
-#                 }
-#                 StateIn(j, t + 1) = log(StateIn(j, t + 1));
-#             }
-#         }
-#     }
-#
-#     // Backward recursion with normalization for B_star, leaving Occupancy unchanged
-#     for (t = n - 1; t >= 0; t--) {
-#         if (S(t) == 1) {
-#             uMax = std::min(n - t, Mx);
-#             IntegerVector::const_iterator first3 = S2.begin() + t;
-#             IntegerVector::const_iterator last3 = S2.begin() + n;
-#             IntegerVector SShB(first3, last3);
-#
-#             IntegerVector::const_iterator first4 = SShB.begin();
-#             IntegerVector::const_iterator last4 = SShB.begin() + uMax;
-#             IntegerVector SShB2(first4, last4);
-#
-#             d2 = clone(d);
-#             for (i = 1; i <= uMax; i++) {
-#                 for (j = 0; j < m; j++) {
-#                     d2(j, i) *= SShB2(i - 1);
-#                 }
-#             }
-#
-#             for (j = 0; j < m; j++) {
-#                 dSum(j) = 0;
-#                 for (i = 0; i <= Mx; i++) {
-#                     dSum(j) += d2(j, i);
-#                 }
-#             }
-#
-#             for (j = 0; j < m; j++) {
-#                 if (dSum(j) != 0) {
-#                     for (i = 0; i <= Mx; i++) {
-#                         d2(j, i) /= dSum(j);
-#                     }
-#                 }
-#             }
-#
-#             // Normalization for B_star
-#             double max_log_prob = -std::numeric_limits<double>::infinity();
-#             for (j = 0; j < m; j++) {
-#                 B_star(j, t) = 0;
-#                 Observ = 0;
-#                 for (u = 1; u <= std::min(n - t, Mx2(j)); u++) {
-#                     double log_occupancy = 0;
-#                     if (std::any_of(allprobs(_, t + u - 1).cbegin(), allprobs(_, t + u - 1).cend(), NumericVector::is_na)) {
-#                         if (SShB2(u - 1) == 1) {
-#                             if (u < n - t) {
-#                                 log_occupancy = Backward(j, t + u) + Observ + log(d2(j, u));
-#                             } else {
-#                                 log_occupancy = Observ + log(D2(j, n - 1 - t));
-#                             }
-#                             B_star(j, t) += exp(log_occupancy);
-#                             // Keep Occupancy as originally computed
-#                             Occupancy(j, endID(t) + (u - 1)) = exp(log_occupancy);
-#                         }
-#                     } else {
-#                         Observ += log(allprobs(j, t + u - 1)) - N(t + u - 1);
-#                         if (SShB2(u - 1) == 1) {
-#                             if (u < n - t) {
-#                                 log_occupancy = Backward(j, t + u) + Observ + log(d2(j, u));
-#                             } else {
-#                                 log_occupancy = Observ + log(D2(j, n - 1 - t));
-#                             }
-#                             B_star(j, t) += exp(log_occupancy);
-#                             // Keep Occupancy as originally computed
-#                             Occupancy(j, endID(t) + (u - 1)) = exp(log_occupancy);
-#                         }
-#                     }
-#                 }
-#
-#                 // Normalize B_star for state j at time t
-#                 B_star(j, t) = log(B_star(j, t));
-#                 max_log_prob = std::max(max_log_prob, B_star(j, t));
-#             }
-#
-#             // Apply normalization to B_star and Backward for time t
-#             for (j = 0; j < m; j++) {
-#                 B_star(j, t) -= max_log_prob;
-#             }
-#
-#             for (j = 0; j < m; j++) {
-#                 Backward(j, t) = 0;
-#                 for (k = 0; k < m; k++) {
-#                     Backward(j, t) += exp(B_star(k, t) + log(gamma(j, k)));
-#                 }
-#                 Backward(j, t) = log(Backward(j, t));
-#             }
-#         }
-#     }
-#
-#
-#
-#     List H(n);
-#     for (i = 0; i < n; i++) {
-#         if (S(i) == 0) {
-#             H(i) = zer;
-#         } else {
-#             NumericMatrix foo(m, lengthID(i));
-#             for (k = 0; k < lengthID(i); k++) {
-#                 foo(_, k) = Occupancy(_, k + endID(i));
-#             }
-#             H(i) = foo;
-#         }
-#     }
-#     // Return Forward probabilities too
-#     return List::create(N, B_star, H, Forward);
-# }")
 
 
+
+mult_ed_fb_r <- function(m, n, delta, allprobs, Mx, Mx2, gamma, d, S, S2) {
+    # Initialize variables
+    zer <- 0
+    d2 <- d
+    D2 <- matrix(0, m, n)
+    dSum <- numeric(m)
+    N <- numeric(n)
+    Norm <- matrix(0, m, n)
+    Forward <- matrix(0, m, n)
+    StateIn <- matrix(0, m, n)
+    Observ <- 0
+    N_b <- numeric(n)
+    Norm_b <- matrix(0, m, n)
+    Backward <- matrix(0, m, n)
+    B_star <- matrix(0, m, n + 2)
+    VarL <- seq(Mx - 1, 1, -1)
+    occNcol <- Mx * (n - Mx + 1) + sum(VarL)
+    Occupancy <- matrix(0, m, occNcol)
+
+    lengthID <- numeric(n)
+    for (i in seq_len(n)) {
+        if (i <= n - Mx) {
+            lengthID[i] <- Mx
+        } else {
+            lengthID[i] <- VarL[i - (n - Mx)]
+        }
+    }
+
+    endID <- numeric(n + 2)
+    for (i in seq_len(n + 2)) {
+        if (i == 1) {
+            endID[i] <- 0
+        } else if (i <= n + 1) {
+            endID[i] <- endID[i - 1] + lengthID[i - 1]
+        } else if (i == n + 2) {
+            endID[i] <- endID[i - 1]
+        }
+    }
+
+    # Forward recursion
+    for (t in seq_len(n)) {
+        uMax <- min(t, Mx + 1)
+        SSh <- S[seq_len(t)]
+        SShrev <- rev(SSh)
+        SShrev2 <- SShrev[seq_len(uMax)]
+        d2 <- d
+        for (i in 2:uMax) {
+            for (j in seq_len(m)) {
+                d2[j, i] <- d2[j, i] * SShrev2[i - 1]
+            }
+        }
+
+        dSum <- rowSums(d2)
+        for (j in seq_len(m)) {
+            if (dSum[j] != 0) {
+                d2[j, ] <- d2[j, ] / dSum[j]
+            }
+        }
+
+        if (t == n) {
+            for (j in seq_len(m)) {
+                for (u in seq_len(Mx)) {
+                    x <- sum(d2[j, u:Mx])
+                    D2[j, u] <- x
+                }
+            }
+        }
+
+        N[t] <- 0
+        for (j in seq_len(m)) {
+            if (t == 1) {
+                if (any(is.na(allprobs[, 1]))) {
+                    Norm[j, 1] <- log(delta[j])
+                } else {
+                    Norm[j, 1] <- log(delta[j]) + log(allprobs[j, 1])
+                }
+            } else {
+                if (any(is.na(allprobs[, t]))) {
+                    Norm[j, t] <- log(abs(exp(StateIn[j, t]) - exp(Forward[j, t - 1]) + exp(Norm[j, t - 1])))
+                } else {
+                    Norm[j, t] <- log(allprobs[j, t]) + log(abs(exp(StateIn[j, t]) - exp(Forward[j, t - 1]) + exp(Norm[j, t - 1])))
+                }
+            }
+            N[t] <- N[t] + exp(Norm[j, t])
+        }
+
+        N[t] <- log(N[t])
+        Norm[, t] <- Norm[, t] - N[t]
+
+        for (j in seq_len(m)) {
+            Forward[j, t] <- 0
+            Observ <- 0
+
+            if (t < n) {
+                for (u in seq_len(min(t, Mx2[j]))) {
+                    if (any(is.na(allprobs[, t - u + 1]))) {
+                        if (SShrev2[u] == 1) {
+                            if (u < t) {
+                                Forward[j, t] <- Forward[j, t] + exp(Observ + log(d2[j, u]) + StateIn[j, t - u + 1])
+                            } else {
+                                Forward[j, t] <- Forward[j, t] + exp(Observ + log(d2[j, t + 1]) + log(delta[j]))
+                            }
+                        }
+                    } else {
+                        Observ <- Observ + log(allprobs[j, t - u + 1]) - N[t - u + 1]
+                        if (SShrev2[u] == 1) {
+                            if (u < t) {
+                                Forward[j, t] <- Forward[j, t] + exp(Observ + log(d2[j, u]) + StateIn[j, t - u + 1])
+                            } else {
+                                Forward[j, t] <- Forward[j, t] + exp(Observ + log(d2[j, t + 1]) + log(delta[j]))
+                            }
+                        }
+                    }
+                }
+                Forward[j, t] <- log(Forward[j, t])
+            } else {
+                for (u in seq_len(min(n, Mx2[j]))) {
+                    if (any(is.na(allprobs[, t - u + 1]))) {
+                        if (SShrev2[u] == 1) {
+                            if (u < n) {
+                                Forward[j, n] <- Forward[j, n] + exp(Observ + log(D2[j, u]) + StateIn[j, n - u])
+                            } else {
+                                Forward[j, n] <- Forward[j, n] + exp(Observ + log(D2[j, n]) + log(delta[j]))
+                            }
+                        }
+                    } else {
+                        Observ <- Observ + log(allprobs[j, t - u + 1]) - N[t - u + 1]
+                        if (SShrev2[u] == 1) {
+                            if (u < n) {
+                                Forward[j, n] <- Forward[j, n] + exp(Observ + log(D2[j, u]) + StateIn[j, n - u])
+                            } else {
+                                Forward[j, n] <- Forward[j, n] + exp(Observ + log(D2[j, n]) + log(delta[j]))
+                            }
+                        }
+                    }
+                }
+                Forward[j, n] <- log(Forward[j, n])
+            }
+        }
+
+        if (t < n) {
+            for (j in seq_len(m)) {
+                StateIn[j, t + 1] <- log(sum(exp(Forward[, t] + log(gamma[, j]))))
+            }
+        }
+    }
+
+    # Backward recursion
+    for (t in seq(n, 1)) {
+        if (S[t] == 1) {
+            uMax <- min(n - t + 1, Mx)
+            SShB <- S2[t:n]
+            SShB2 <- SShB[seq_len(uMax)]
+            d2 <- d
+            for (i in seq_len(uMax)) {
+                for (j in seq_len(m)) {
+                    d2[j, i + 1] <- d2[j, i + 1] * SShB2[i]
+                }
+            }
+
+            dSum <- rowSums(d2)
+            for (j in seq_len(m)) {
+                if (dSum[j] != 0) {
+                    d2[j, ] <- d2[j, ] / dSum[j]
+                }
+            }
+
+            for (j in seq_len(m)) {
+                for (u in seq_len(Mx)) {
+                    D2[j, u] <- sum(d2[j, u:Mx])
+                }
+            }
+
+            # N_b[t] <- 0
+            # if (t == n) {
+            #     for (j in seq_len(m)) {
+            #         Norm_b[j, t] <- log(D2[j, 1]) + log(allprobs[j, t])
+            #     }
+            # } else {
+            #     for (j in seq_len(m)) {
+            #         Norm_b[j, t] <- log(allprobs[j, t]) + log(abs(exp(Backward[j, t]) - exp(B_star[j, t + 1]) + exp(Norm_b[j, t + 1])))
+            #         N_b[t] <- N_b[t] + exp(Norm_b[j, t])
+            #     }
+            # }
+            # N_b[t] <- log(N_b[t])
+            # Norm_b[, t] <- Norm_b[, t] - N_b[t]
+
+            for (j in seq_len(m)) {
+                B_star[j, t] <- 0
+                Observ <- 0
+                for (u in seq_len(min(n - t + 1, Mx2[j]))) {
+                    if (any(is.na(allprobs[, t + u - 1]))) {
+                        if (SShB2[u] == 1) {
+                            if (u < n - t + 1) {
+                                Occupancy[j, endID[t] + u - 1] <- exp(Backward[j, t + u] + log(d2[j, u]))
+                            } else {
+                                Occupancy[j, endID[t] + u - 1] <- exp(log(delta[j]) + Observ + log(d2[j, u]))
+                            }
+                        }
+                    } else {
+                        Observ <- Observ + log(allprobs[j, t + u - 1]) - N[t + u - 1]
+                        if (SShB2[u] == 1) {
+                            if (u < n - t + 1) {
+                                Occupancy[j, endID[t] + u - 1] <- exp(Backward[j, t + u] + Observ + log(d2[j, u]))
+                            } else {
+                                Occupancy[j, endID[t] + u - 1] <- exp(log(delta[j]) + Observ + log(d2[j, u]))
+                            }
+                        }
+                    }
+                }
+                Backward[j, t] <- log(sum(Occupancy[j, endID[t]:(endID[t + 1] - 1)]))
+                B_star[j, t] <- log(sum(exp(Occupancy[j, endID[t]:(endID[t + 1] - 1)])))
+            }
+        }
+    }
+
+    # Return the objects as a list
+    return(list(N = N, B_star = B_star, H = Occupancy, Forward = Forward))
+}
+
+
+
+
+
+# New try
+cppFunction("List mult_ed_fb_cpp(int m, int n, NumericVector delta, NumericMatrix allprobs, int Mx, IntegerVector Mx2, NumericMatrix gamma, NumericMatrix d, IntegerVector S, IntegerVector S2) {
+    int j, t, i, u, uMax, v, k, Len;
+
+    int zer = 0;
+    NumericMatrix d2 = clone(d);
+
+    double x;
+    NumericMatrix D2(m, n);
+    NumericVector dSum(m);
+
+    NumericVector N(n);
+    NumericMatrix Norm(m, n);
+    NumericMatrix Forward(m, n);
+    NumericMatrix StateIn(m, n);
+    double Observ = 0;
+
+    NumericVector N_b(n);
+    NumericMatrix Norm_b(m, n);
+
+    NumericMatrix Backward(m, n);
+    NumericMatrix B_star(m, n + 2);
+    IntegerVector VarL(Mx - 1);
+    for (i = 1; i < Mx; i++) {
+        VarL(i - 1) = Mx - i;
+    }
+    int occNcol = Mx * (n - Mx + 1) + sum(VarL);
+    NumericMatrix Occupancy(m, occNcol);
+
+    IntegerVector lengthID(n);
+    for (i = 0; i < n; i++) {
+        if (i < n - Mx + 1) {
+            lengthID(i) = Mx;
+        } else {
+            lengthID(i) = VarL(i - (n - Mx + 1));
+        }
+    }
+
+    IntegerVector endID(n + 2);
+    for (i = 0; i < n + 2; i++) {
+        if (i == 0) {
+            endID(i) = 0;
+        }
+        if (i > 0) {
+            if (i < n + 1) {
+                endID(i) = endID(i - 1) + lengthID(i - 1);
+            }
+        }
+        if (i == n + 1) {
+            endID(i) = endID(i - 1);
+        }
+    }
+
+    IntegerVector::const_iterator first = S.begin() + 0;
+
+    // forward recursion
+    for (t = 0; t <= n - 1; t++) {
+
+        uMax = std::min(t + 1, Mx + 1);
+
+        IntegerVector::const_iterator last = S.begin() + (t + 1);
+        IntegerVector SSh(first, last);
+        Len = SSh.size();
+        IntegerVector SShrev(Len);
+        for (i = 0; i < Len; i++) {
+            SShrev(i) = SSh(Len - 1 - i);
+        }
+
+        IntegerVector::const_iterator first2 = SShrev.begin() + 0;
+        IntegerVector::const_iterator last2 = SShrev.begin() + (uMax);
+        IntegerVector SShrev2(first2, last2);
+
+        d2 = clone(d);
+        for (i = 1; i < uMax; i++) {
+            for (j = 0; j < m; j++) {
+                d2(j, i) *= SShrev2(i - 1);
+            }
+        }
+
+        for (j = 0; j < m; j++) {
+            dSum(j) = 0;
+            for (i = 0; i <= Mx; i++) {
+                dSum(j) += d2(j, i);
+            }
+        }
+
+        for (j = 0; j < m; j++) {
+            if (dSum(j) != 0) {
+                for (i = 0; i <= Mx; i++) {
+                    d2(j, i) /= dSum(j);
+                }
+            }
+        }
+
+        if (t == n - 1) {
+            for (j = 0; j < m; j++) {
+                for (u = 1; u <= Mx; u++) {
+                    x = 0;
+                    for (v = u; v < Mx + 1; v++)
+                        x += d2(j, v);
+                    D2(j, (u - 1)) = x;
+                }
+                for (u = Mx + 1; u <= n; u++) {
+                    D2(j, (u - 1)) = 0;
+                }
+            }
+        }
+
+        N(t) = 0;
+        for (j = 0; j < m; j++) {
+            if (t == 0) {
+                // Add support for listwise missing observations
+                // Calculate initial state probabilities at t = 0
+                if (std::any_of(allprobs(_, 0).cbegin(), allprobs(_, 0).cend(), NumericVector::is_na)) {
+                    Norm(j, 0) = log(delta(j));
+                } else {
+                    Norm(j, 0) = log(delta(j)) + log(allprobs(j, 0));
+                }
+            } else {
+                // Check for missing values in the row at time t of allprobs
+                if (std::any_of(allprobs(_, t).cbegin(), allprobs(_, t).cend(), NumericVector::is_na)) {
+                    Norm(j, t) = log(std::abs(exp(StateIn(j, t)) - exp(Forward(j, (t - 1))) + exp(Norm(j, (t - 1)))));
+                } else {
+                    Norm(j, t) = log(allprobs(j, t)) + log(std::abs(exp(StateIn(j, t)) - exp(Forward(j, (t - 1))) + exp(Norm(j, (t - 1)))));
+                }
+            }
+            N(t) += exp(Norm(j, t));
+        }
+        N(t) = log(N(t));
+        for (j = 0; j < m; j++) {
+            Norm(j, t) -= N(t);
+        }
+
+        for (j = 0; j < m; j++) {
+            Forward(j, t) = 0;
+            Observ = 0;
+
+            if (t < n - 1) {
+                for (u = 1; u <= std::min(t + 1, Mx2(j)); u++) {
+                    // Add support for listwise missing observations
+                    // Check for missing values in allprobs
+                    if (std::any_of(allprobs(_, t - u + 1).cbegin(), allprobs(_, t - u + 1).cend(), NumericVector::is_na)) {
+                        if (SShrev2(u - 1) == 1) {
+                            if (u < t + 1) {
+                                Forward(j, t) += exp(Observ + log(d2(j, u)) + StateIn(j, (t - u + 1)));
+                            } else {
+                                Forward(j, t) += exp(Observ + log(d2(j, t + 1)) + log(delta(j)));
+                            }
+                        }
+                    } else {
+                        Observ += log(allprobs(j, t - u + 1)) - N(t - u + 1);
+                        if (SShrev2(u - 1) == 1) {
+                            if (u < t + 1) {
+                                Forward(j, t) += exp(Observ + log(d2(j, u)) + StateIn(j, (t - u + 1)));
+                            } else {
+                                Forward(j, t) += exp(Observ + log(d2(j, t + 1)) + log(delta(j)));
+                            }
+                        }
+                    }
+                }
+                Forward(j, t) = log(Forward(j, t));
+            } else {
+                for (u = 1; u <= std::min(n, Mx2(j)); u++) {
+                    // Add support for listwise missing observations
+                    if (std::any_of(allprobs(_, t - u + 1).cbegin(), allprobs(_, t - u + 1).cend(), NumericVector::is_na)) {
+                        if (SShrev2(u - 1) == 1) {
+                            if (u < n) {
+                                Forward(j, n - 1) += exp(Observ + log(D2(j, u)) + StateIn(j, n - u));
+                            } else {
+                                Forward(j, n - 1) += exp(Observ + log(D2(j, n)) + log(delta(j)));
+                            }
+                        }
+                    } else {
+                        Observ += log(allprobs(j, t - u + 1)) - N(t - u + 1);
+                        if (SShrev2(u - 1) == 1) {
+                            if (u < n) {
+                                Forward(j, n - 1) += exp(Observ + log(D2(j, u)) + StateIn(j, n - u));
+                            } else {
+                                Forward(j, n - 1) += exp(Observ + log(D2(j, n)) + log(delta(j)));
+                            }
+                        }
+                    }
+                }
+                Forward(j, n - 1) = log(Forward(j, n - 1));
+            }
+        }
+        if (t < n - 1) {
+            for (j = 0; j < m; j++) {
+                StateIn(j, t + 1) = 0;
+                for (i = 0; i < m; i++) {
+                    StateIn(j, t + 1) += exp(Forward(i, t) + log(gamma(i, j)));
+                }
+                StateIn(j, t + 1) = log(StateIn(j, t + 1));
+            }
+        }
+    }
+
+    // Backward recursion
+    for (t = n - 1; t >= 0; t--) {
+        if (S(t) == 1) {
+
+            uMax = std::min(n - t, Mx);
+            IntegerVector::const_iterator first3 = S2.begin() + t;
+            IntegerVector::const_iterator last3 = S2.begin() + (n);
+            IntegerVector SShB(first3, last3);
+
+            IntegerVector::const_iterator first4 = SShB.begin() + 0;
+            IntegerVector::const_iterator last4 = SShB.begin() + (uMax);
+            IntegerVector SShB2(first4, last4);
+
+            d2 = clone(d);
+            for (i = 1; i < uMax + 1; i++) {
+                for (j = 0; j < m; j++) {
+                    d2(j, i) *= SShB2(i - 1);
+                }
+            }
+
+            for (j = 0; j < m; j++) {
+                dSum(j) = 0;
+                for (i = 0; i <= Mx; i++) {
+                    dSum(j) += d2(j, i);
+                }
+            }
+
+            for (j = 0; j < m; j++) {
+                if (dSum(j) != 0) {
+                    for (i = 0; i <= Mx; i++) {
+                        d2(j, i) /= dSum(j);
+                    }
+                }
+            }
+
+            for (j = 0; j < m; j++) {
+                for (u = 1; u <= Mx; u++) {
+                    x = 0;
+                    for (v = u; v < Mx + 1; v++)
+                        x += d2(j, v);
+                    D2(j, (u - 1)) = x;
+                }
+                for (u = Mx + 1; u <= n; u++) {
+                    D2(j, (u - 1)) = 0;
+                }
+            }
+
+            // Modify the initialization of Norm_b to account for censored durations D2 and allprobs
+            N_b(t) = 1;
+            Norm_b(j, n) = log(allprobs(j, n));
+            if (t == n - 1) {
+                // Initialize Norm_b using the duration-adjusted D2 matrix and the likelihood of the observed data (allprobs)
+                for (j = 0; j < m; j++) {
+                    //Norm_b(j, t) = log(D2(j, 1)) + log(allprobs(j, t));
+                    Norm_b(j, t) = log(allprobs(j, t));
+                }
+            } else {
+                for (j = 0; j < m; j++) {
+                    //Norm_b(j, t) = log(allprobs(j, t)) + log(std::abs(exp(Backward(j, t)) - exp(B_star(j, t + 1)) + exp(Norm_b(j, t + 1))));
+                    Norm_b(j, t) = log(allprobs(j, t)) + log(std::abs(- exp(B_star(j, t + 1)) + exp(Norm_b(j, t + 1))));
+                }
+                N_b(t) += exp(Norm_b(j, t));
+            }
+            N_b(t) = log(N_b(t));
+            for (j = 0; j < m; j++) {
+                Norm_b(j, t) -= N_b(t);
+            }
+
+            for (j = 0; j < m; j++) {
+                B_star(j, t) = 0;
+                Observ = 0;
+                for (u = 1; u <= std::min(n - t, Mx2(j)); u++) {
+                    // Add support for listwise missing observations
+                    if (std::any_of(allprobs(_, t + u - 1).cbegin(), allprobs(_, t + u - 1).cend(), NumericVector::is_na)) {
+                        if (SShB2(u - 1) == 1) {
+                            if (u < n - t) {
+                                Occupancy(j, endID(t) + (u - 1)) = exp(Backward(j, t + u) + Observ + log(d2(j, u)));
+                            } else {
+                                Occupancy(j, endID(t) + (u - 1)) = exp(Observ + log(D2(j, n - 1 - t)));
+                            }
+                            B_star(j, t) += Occupancy(j, endID(t) + (u - 1));
+                        }
+                    } else {
+                        Observ += log(allprobs(j, t + u - 1)) - N_b(t + u - 1);
+                        if (SShB2(u - 1) == 1) {
+                            if (u < n - t) {
+                                Occupancy(j, endID(t) + (u - 1)) = exp(Backward(j, t + u) + Observ + log(d2(j, u)));
+                            } else {
+                                Occupancy(j, endID(t) + (u - 1)) = exp(Observ + log(D2(j, n - 1 - t)));
+                            }
+                            B_star(j, t) += Occupancy(j, endID(t) + (u - 1));
+                        }
+                    }
+                }
+                B_star(j, t) = log(B_star(j, t));
+            }
+            // Calculate Backward(j, t)
+            for (j = 0; j < m; j++) {
+                Backward(j, t) = 0;
+                for (k = 0; k < m; k++) {
+                    Backward(j, t) += exp(B_star(k, t) + log(gamma(j, k)));
+                }
+                Backward(j, t) = log(Backward(j, t));
+            }
+        }
+    }
+
+    List H(n);
+    for (i = 0; i < n; i++) {
+        if (S(i) == 0) {
+            H(i) = zer;
+        } else {
+            NumericMatrix foo(m, lengthID(i));
+            for (k = 0; k < lengthID(i); k++) {
+                foo(_, k) = Occupancy(_, k + endID(i));
+            }
+            H(i) = foo;
+        }
+    }
+    // Return Forward probabilities too
+    return List::create(N, B_star, H, Forward);
+}")
+
+
+
+
+FB <- mult_ed_fb_cpp(
+    m = m,
+    n = subj_data[[s]]$n,
+    allprobs = t(allprobs),
+    Mx = subj_data[[s]]$Mx,
+    Mx2 = subj_data[[s]]$Mx2,
+    gamma = gamma[[s]],
+    d = d,
+    S2 = rep(1,subj_data[[s]]$n),
+    S = rep(1,subj_data[[s]]$n),
+    delta = delta[[s]]
+)
+
+FB[[]]
 
 load("/Users/a6159737/Documents/Utrecht University/PhD/Projects/Simulation studies/medhmm-sim/tests/debugging.RData")
+load("/Users/a6159737/Documents/Utrecht University/PhD/Projects/Simulation studies/medhmm-sim/tests/debugging2.RData")
 
 
 # set.seed(42)
@@ -1987,7 +1622,6 @@ medHMM_cont_shiftpois <- function(s_data, gen, xx = NULL, start_val,
                 allprobs <- get_all1(x = subj_data[[s]]$y, emiss = emiss[[s]], n_dep = n_dep, data_distr = "continuous")
 
                 FB	<- mult_ed_fb_cpp(
-                    # y2 = subj_data[[s]]$y,
                     m = m,
                     n = subj_data[[s]]$n,
                     allprobs = t(allprobs),
@@ -1995,12 +1629,23 @@ medHMM_cont_shiftpois <- function(s_data, gen, xx = NULL, start_val,
                     Mx2 = subj_data[[s]]$Mx2,
                     gamma = gamma[[s]],
                     d = d,
-                    # S2 = subj_data[[s]]$switch2,
-                    # S = subj_data[[s]]$switch,
                     S2 = rep(1,subj_data[[s]]$n),
                     S = rep(1,subj_data[[s]]$n),
                     delta = delta[[s]]
                 )
+
+                # FB <- mult_ed_fb_r(
+                #     m = m,
+                #     n = subj_data[[s]]$n,
+                #     allprobs = t(allprobs),
+                #     Mx = subj_data[[s]]$Mx,
+                #     Mx2 = subj_data[[s]]$Mx2,
+                #     gamma = gamma[[s]],
+                #     d = d,
+                #     S2 = rep(1,subj_data[[s]]$n),
+                #     S = rep(1,subj_data[[s]]$n),
+                #     delta = delta[[s]]
+                # )
 
                 B_star				<- FB[[2]]
                 Occupancy			<- FB[[3]]
@@ -2331,11 +1976,13 @@ medHMM_cont_shiftpois <- function(s_data, gen, xx = NULL, start_val,
     return(out)
 }
 
+out_medhmm <- out
 
 
 
 library(tidyverse)
 library(mHMMbayes)
+library(medHMM)
 
 ## 3 states
 n_t <- 250
@@ -3074,7 +2721,7 @@ out_mhmm <- mHMM(s_data = as.matrix(fit_data[,-4]),
 # Step 4a: Forecast using the fitted model
 # forecast_results <- forecast_mHMM1(object = out, s_data = as.matrix(forecast_data[,-4]), forecast_steps = forecast_steps)
 forecast_results_medhmm <- forecast_medHMM1(object = out_medhmm, s_data = as.matrix(fit_data[,-4]), forecast_steps = forecast_steps, Mx = Mx, return_all = FALSE)
-forecast_results_mhmm <- forecast_mHMM1(object = out_mhmm, s_data = as.matrix(fit_data[,-4]), forecast_steps = forecast_steps, return_all = FALSE)
+forecast_results_mhmm <- forecast_mHMM1(object = out_mhmm, s_data = as.matrix(fit_data[,-4]), forecast_steps = forecast_steps)
 
 # Ensure forecast_results has the necessary columns
 colnames(forecast_results_medhmm) <- c("subj", "state", "time", "pr_state_1", "pr_state_2", "pr_state_3")
