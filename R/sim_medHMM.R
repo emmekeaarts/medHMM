@@ -507,6 +507,19 @@ sim_medHMM <- function(n_t, n, data_distr = 'continuous', m, n_dep = 1,
             } else {
                 states[((j-1) * n_t + 1), 2] <- start_state
             }
+
+            # Sample first state duration:
+            if (dwell_type == "lognormal") {
+                durat <- round(rlnorm(1, meanlog = max(sub_durat[[j]][states[((j-1) * n_t + 1), 2],1],1),
+                                      sdlog = sqrt(sub_durat[[j]][states[((j-1) * n_t + 1), 2],2])),0)
+            } else if (dwell_type == "poisson") {
+                # durat <- round(rpois(1, lambda = max(sub_durat[[j]][states[((j-1) * n_t + t), 2],1],1)),0)
+                durat <- round(rpois(1, lambda = sub_durat[[j]][states[((j-1) * n_t + 1), 2],1])+shift,0)
+            }
+
+            # Paste the state over the min(duration sampled, remaining timesteps)
+            states[((j-1) * n_t + 1):((j-1) * n_t + 1 + min(durat,(n_t-1))), 2] <- states[((j-1) * n_t + 1), 2]
+
             if(data_distr == "categorical"){
                 for(i in 1:n_dep){
                     obs[((j-1) * n_t + 1), (1+i)] <- sample(x = 1:q_emiss[i], size = 1, prob = sub_emiss[[j]][[i]][states[((j-1) * n_t + 1), 2],])
